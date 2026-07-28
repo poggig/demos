@@ -209,7 +209,7 @@ class Level5 extends DragonScene {
       if (og && gob) {
         if (og.on && !this._ogreDead) {
           // Chief rides the Ogre's shoulders, pinned + untouchable each frame.
-          const rideY = (og.body ? og.body.top : og.y) - gob.h;
+          const rideY = (og.body ? og.body.top : og.y) - (gob.body ? gob.body.height : 20);
           gob.inv = 999;
           if (gob.body) gob.body.reset(og.x, rideY); else { gob.x = og.x; gob.y = rideY; }
         } else if (!og.on && !this._ogreDead) {

@@ -19,6 +19,166 @@
         "w": 46,
         "h": 62
       }
+    },
+    "enemy_knight_walk_0": {
+      "frame": {
+        "x": 46,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_1": {
+      "frame": {
+        "x": 92,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_2": {
+      "frame": {
+        "x": 138,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_3": {
+      "frame": {
+        "x": 184,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_4": {
+      "frame": {
+        "x": 230,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_5": {
+      "frame": {
+        "x": 276,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_6": {
+      "frame": {
+        "x": 322,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_knight_walk_7": {
+      "frame": {
+        "x": 368,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
     }
   },
   "meta": {
@@ -26,7 +186,7 @@
     "image": "enemy_knight.png",
     "format": "RGBA8888",
     "size": {
-      "w": 46,
+      "w": 414,
       "h": 62
     },
     "scale": "1"

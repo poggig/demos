@@ -79,8 +79,16 @@ const GAME_CONFIG = {
   // does the MOTION. v2: strikes POSE-SWAP to a real drawn attack pose (idle+attack 2-frame
   // atlases), and each actor moves with a weight PERSONALITY — the rogue is quick and leaning,
   // the armored knight slow and planted, the dragon ponderous. + hurt recoil, landing squash.
+  // COMBAT JUICE (phaser-1.15.0): impact feel — hit-stop, white flash, knockback, sparks,
+  // camera shake on kills/boss hits, blob shadows, and a dodgeable enemy WINDUP telegraph.
+  juice: true,
+  // THE ANIMATION HYBRID (GTM-13, art-lab/ANIMATION-PLAYBOOK.md): REAL frame clips own the
+  // display — per-frame-QA'd RD walk cycles at 10 fps, the drawn attack pose as a HELD strike
+  // (repeat:0), a slow idle breath — while procAnim layers motion transforms on top (bob/lean/
+  // hurt/land + weight personality). No poseSwap: the anims clip system owns frames now.
+  anims: { fps: 10, clips: { attack: { repeat: 0 }, idle: { fps: 3 } } },
   procAnim: {
-    hero: true, enemy: true, poseSwap: true,
+    hero: true, enemy: true,
     profiles: {
       // cast
       kote: { weight: 'light' }, nesta: { weight: 'light', bobHz: 10 },

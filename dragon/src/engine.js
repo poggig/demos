@@ -29,7 +29,7 @@
 
 // ── World constants (parity with the hand-rolled engine) ──
 const T = 16, CW = 800, CH = 480;
-const GAME_VERSION = 'phaser-1.14.0';
+const GAME_VERSION = 'phaser-1.15.0';
 // The old engine's stat numbers are per-1/60s-frame (spd 2.1 px/frame, jf -9,
 // GR 0.6, MF 10). Arcade works in px/second, so we scale by FPS. Keeping data.js
 // numbers in per-frame units makes the M6 stat port a copy-paste.
@@ -105,10 +105,12 @@ function procProfile(spr) {
   });
 }
 // (scaleX, scaleY, angleDeg) for a state at time t, modulated by the actor's profile.
-function procPose(st, t, atkPhase, prof) {
+// `frameAnims`: when GAME_CONFIG.anims plays REAL walk frames, the run transform DAMPS
+// (×0.35 squash, ×0.6 lean) so the drawn gait isn't double-wobbled (GTM-13 hybrid).
+function procPose(st, t, atkPhase, prof, frameAnims) {
   const A = prof.amp, L = prof.lean, HZ = prof.hz;
   switch (st) {
-    case 'run': { const b = Math.abs(Math.sin(t * HZ)); return { sx: 1 + (0.02 - b * 0.05) * A, sy: 1 + (b * 0.07 - 0.03) * A, ang: Math.sin(t * HZ) * 5 * L }; }
+    case 'run': { const fa = frameAnims ? 0.35 : 1, fl = frameAnims ? 0.6 : 1; const b = Math.abs(Math.sin(t * HZ)); return { sx: 1 + (0.02 - b * 0.05) * A * fa, sy: 1 + (b * 0.07 - 0.03) * A * fa, ang: Math.sin(t * HZ) * 5 * L * fl }; }
     case 'jump': return { sx: 1 - 0.1 * A, sy: 1 + 0.12 * A, ang: -7 * L };
     case 'fall': return { sx: 1 + 0.07 * A, sy: 1 - 0.07 * A, ang: 4 * L };
     case 'dash': return { sx: 1 + 0.22 * A, sy: 1 - 0.14 * A, ang: -12 * L };
@@ -155,7 +157,7 @@ function applyProc(spr, dt) {
       else if (!striking && spr._idleFrame && spr.frame.name !== spr._idleFrame) spr.setFrame(spr._idleFrame);
     }
   }
-  const p = procPose(st, spr._procT, atkPhase, prof);
+  const p = procPose(st, spr._procT, atkPhase, prof, !!cfg('anims', false));
   // Lerp toward the target pose — smooth state transitions, no pops (snappy k).
   const k = Math.min(1, dt * 18);
   spr._pSx = spr._pSx == null ? p.sx : spr._pSx + (p.sx - spr._pSx) * k;
@@ -165,6 +167,69 @@ function applyProc(spr, dt) {
   spr.setScale(base * spr._pSx, base * spr._pSy);     // squash/stretch only; facing stays via setFlipX
   spr.setAngle(spr._pAng * dir);                      // lean is facing-corrected
   if (spr.body) spr.body.setSize(spr._baseBW || spr.body.width, spr._baseBH || spr.body.height);   // keep collision box fixed
+}
+
+// ── COMBAT JUICE (GTM-13 · phaser-1.15.0) ──
+// "The enemies when they fight are subpar" — impact was missing, not art. Config-gated
+// game-feel layer: GAME_CONFIG.juice = true (all on) or { flash, hitstop, knockback,
+// sparks, shake, shadows, windup } per-key. Absent → no-op (byte-identical).
+//   flash     — the struck actor flashes white for ~90 ms.
+//   hitstop   — physics time dilates hard (timeScale 8) for 50/90 ms on hit/kill.
+//   knockback — the victim takes a horizontal impulse away from the attacker.
+//   sparks    — a tiny engine-drawn impact burst at the victim (no module dep).
+//   shake     — camera micro-shake on kills and boss-class hits.
+//   shadows   — a soft blob shadow under every actor (grounds the sprites).
+//   windup    — enemies TELEGRAPH melee: a 0.18 s leaned-back windup before the blow
+//               lands; step away in time and it WHIFFS (readable, dodgeable combat).
+function juiceOn(key) {
+  const c = cfg('juice', false);
+  if (c === true) return true;
+  if (c && typeof c === 'object') return c[key] !== false && (key in c ? !!c[key] : c.all !== false);
+  return false;
+}
+function jSpark(scene, x, y, color, n) {
+  if (!scene || !scene.add) return;
+  for (let i = 0; i < (n || 5); i++) {
+    const a = Math.random() * Math.PI * 2, d = 6 + Math.random() * 10;
+    const r = scene.add.rectangle(x, y, 3, 3, color || 0xfff2c0, 1).setDepth(50);
+    scene.tweens.add({ targets: r, x: x + Math.cos(a) * d * 2.2, y: y + Math.sin(a) * d * 1.6, alpha: 0, scale: 0.4, duration: 190 + Math.random() * 90, onComplete: () => r.destroy() });
+  }
+}
+// One hit's worth of feel, applied to the VICTIM sprite (hero or enemy).
+function jHitFX(victim, srcX, heavy) {
+  const scene = victim.scene; if (!scene) return;
+  if (juiceOn('flash')) victim._jFlashT = 0.09;
+  if (juiceOn('knockback') && srcX != null && victim.body && victim.body.enable) {
+    const dir = victim.x >= srcX ? 1 : -1;
+    victim.body.velocity.x += dir * (heavy ? 150 : 95);
+  }
+  if (juiceOn('sparks')) jSpark(scene, victim.x + (srcX != null ? (srcX > victim.x ? 8 : -8) : 0), victim.y - (victim.body ? victim.body.height * 0.35 : 12), heavy ? 0xffd24a : 0xfff2c0, heavy ? 9 : 5);
+  if (juiceOn('hitstop')) { scene._jHsT = Math.max(scene._jHsT || 0, heavy ? 0.09 : 0.05); scene.physics.world.timeScale = 8; }
+  if (juiceOn('shake') && heavy) scene.cameras.main.shake(70, 0.004);
+}
+// Per-frame juice upkeep for one actor: white-flash decay + the blob shadow.
+function jTickActor(spr, dt) {
+  if (!spr || !spr.scene) { if (spr && spr._jShadow && spr._jShadow.scene) { spr._jShadow.destroy(); spr._jShadow = null; } return; }   // destroyed actor
+  if (spr._jFlashT != null) {
+    // Phaser 4 removed setTintFill (it became a console.error shim that does nothing —
+    // caught by the GTM-13 playtest audit). The 4.x way: setTint + TintModes.FILL.
+    if (spr._jFlashT > 0) { spr._jFlashT -= dt; spr.setTint(0xffffff); if (spr.setTintMode) spr.setTintMode(Phaser.TintModes.FILL); }
+    else if (spr._jFlashT > -1) { spr.clearTint(); if (spr.setTintMode) spr.setTintMode(Phaser.TintModes.MULTIPLY); spr._jFlashT = -1; }
+  }
+  if (juiceOn('shadows')) {
+    if (spr._jShadow && !spr._jShadow.scene) spr._jShadow = null;   // act teardown destroyed it
+    if (!spr._jShadow && spr.on && spr.scene && spr.body) {
+      const w = Math.max(14, spr.body.width * 1.05);
+      spr._jShadow = spr.scene.add.ellipse(spr.x, spr.body.bottom + 2, w, 5, 0x000000, 0.27).setDepth((spr.depth || 2) - 1);
+    }
+    if (spr._jShadow) {
+      if (!spr.on || !spr.visible) { spr._jShadow.setVisible(false); }
+      else {
+        const grounded = spr.body.blocked.down || spr.body.touching.down;
+        spr._jShadow.setVisible(true).setPosition(spr.x, spr.body.bottom + 2).setAlpha(grounded ? 0.27 : 0.13);
+      }
+    }
+  }
 }
 
 // ── SWIM MODE tunables (E-b, M7 · phaser-1.3.0) ──
@@ -829,9 +894,10 @@ class Hero extends Phaser.Physics.Arcade.Sprite {
       ? { x: b.x + b.width, y: b.y - 4, w: r, h: b.height + 8, dmg: this.st === 'skill' ? this.atkDmg * this._skillMult : this.atkDmg }
       : { x: b.x - r, y: b.y - 4, w: r, h: b.height + 8, dmg: this.st === 'skill' ? this.atkDmg * this._skillMult : this.atkDmg };
   }
-  hurt(n) {
+  hurt(n, srcX) {
     if (this.inv > 0 || !this.on) return;
     this.hp -= n; this.inv = 0.6;
+    jHitFX(this, srcX, false);                                  // juice: flash/knockback/sparks/hitstop (no-op unless GAME_CONFIG.juice)
     if (this.hp <= 0) { this.hp = 0; this.on = false; this.setVisible(false); this.body.setVelocity(0, 0); this.body.enable = false; }
   }
 }
@@ -853,7 +919,7 @@ class HeroProj {
     for (const e of enemies) {
       if (!e.on) continue;
       const eb = e.body;
-      if (b.x < eb.x + eb.width && b.x + b.width > eb.x && b.y < eb.y + eb.height && b.y + b.height > eb.y) { e.hurt(this.dmg); return this.kill(); }
+      if (b.x < eb.x + eb.width && b.x + b.width > eb.x && b.y < eb.y + eb.height && b.y + b.height > eb.y) { e.hurt(this.dmg, this.x); return this.kill(); }
     }
   }
   kill() { if (!this.on) return; this.on = false; if (this.go) { this.go.destroy(); this.go = null; } }
@@ -881,7 +947,7 @@ class EnemyProj {
     for (const h of heroes) {
       if (!h.on) continue;
       const hb = h.body;
-      if (b.x < hb.x + hb.width && b.x + b.width > hb.x && b.y < hb.y + hb.height && b.y + b.height > hb.y) { h.hurt(this.dmg); return this.kill(); }
+      if (b.x < hb.x + hb.width && b.x + b.width > hb.x && b.y < hb.y + hb.height && b.y + b.height > hb.y) { h.hurt(this.dmg, this.x); return this.kill(); }
     }
   }
   kill() { if (!this.on) return; this.on = false; if (this.go) { this.go.destroy(); this.go = null; } }
@@ -910,7 +976,7 @@ class MegaProj {
     for (const e of enemies) {
       if (!e.on) continue;
       if (Math.abs(e.x - x) < this.rr && Math.abs(e.y - y) < this.rr) {
-        e.hurt(this.dmg);
+        e.hurt(this.dmg, x);
         if (this._slow && e.on) e.applySlow(this._slow, this._slowDur);
         return this.kill();
       }
@@ -1008,7 +1074,16 @@ class Enemy extends Phaser.Physics.Arcade.Sprite {
     // no-op unless the game set a timer field on the instance (phaser-1.12.0).
     if (this._bossBeh) this._bossBeh(dt, hero, visible);
     const canHit = visible || this.ai === 'boss' || this.ai === 'static';
-    if (hero && canHit && this.akt <= 0 && this._overlaps(hero)) { hero.hurt(this.dmg); this.akt = 1.0; this._atkAnimT = ENEMY_ATTACK_POSE; }
+    if (hero && canHit && this.akt <= 0 && !this._jWindT && this._overlaps(hero)) {
+      if (juiceOn('windup')) {
+        // TELEGRAPH (juice.windup): pose the strike NOW, land it 0.18 s later — step away and it WHIFFS.
+        this._jWindT = 0.18; this._atkAnimT = ENEMY_ATTACK_POSE + 0.18;
+      } else { hero.hurt(this.dmg, this.x); this.akt = 1.0; this._atkAnimT = ENEMY_ATTACK_POSE; }
+    }
+    if (this._jWindT) {
+      this._jWindT -= dt;
+      if (this._jWindT <= 0) { this._jWindT = 0; this.akt = 1.0; if (hero && canHit && this._overlaps(hero)) hero.hurt(this.dmg, this.x); }
+    }
   }
   // On-hit slow (freeze shot): drop speed to spd×mul for `dur`s, restored on expiry.
   applySlow(mul, dur) { if (this._spdBase === undefined) this._spdBase = this.spd; this.spd = this._spdBase * mul; this._slowT = dur; }
@@ -1016,10 +1091,12 @@ class Enemy extends Phaser.Physics.Arcade.Sprite {
     const a = this.body, b = o.body;
     return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   }
-  hurt(n) {
+  hurt(n, srcX) {
     if (this.inv > 0 || !this.on) return;
     this.hp -= n; this.inv = 0.3;
-    if (this.hp <= 0) { this.hp = 0; this.on = false; this.destroy(); }
+    const dying = this.hp <= 0;
+    jHitFX(this, srcX, dying || this.ai === 'boss');            // juice: kills + boss hits are HEAVY
+    if (dying) { this.hp = 0; this.on = false; if (this._jShadow) { this._jShadow.destroy(); this._jShadow = null; } this.destroy(); }
   }
 }
 
@@ -1402,6 +1479,12 @@ class GameScene extends Phaser.Scene {
     // smooth transforms keyed to state. No-op unless GAME_CONFIG.procAnim is set.
     if (procEnabled('hero')) this.heroes.forEach(h => h.on && applyProc(h, dt));
     if (procEnabled('enemy')) this.enemies.forEach(e => e.on && applyProc(e, dt));
+    // COMBAT JUICE upkeep (phaser-1.15.0): flash decay + blob shadows + hit-stop restore.
+    if (cfg('juice', false)) {
+      this.heroes.forEach(h => jTickActor(h, dt));
+      this.enemies.forEach(e => jTickActor(e, dt));
+      if (this._jHsT > 0) { this._jHsT -= dt; if (this._jHsT <= 0) this.physics.world.timeScale = 1; }
+    }
   }
   _autoSwapOnDeath() {
     const idx = this.heroes.findIndex(h => h.on);
@@ -1417,7 +1500,7 @@ class GameScene extends Phaser.Scene {
         if (!e.on || hero._swingHit.has(e)) return;
         const b = e.body;
         if (e.x - b.width / 2 < ab.x + ab.w && e.x + b.width / 2 > ab.x && e.y - b.height / 2 < ab.y + ab.h && e.y + b.height / 2 > ab.y) {
-          hero._swingHit.add(e); e.hurt(ab.dmg || hero.atkDmg);
+          hero._swingHit.add(e); e.hurt(ab.dmg || hero.atkDmg, hero.x);
         }
       });
     });
