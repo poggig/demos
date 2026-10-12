@@ -5,6 +5,8 @@ import { CONFIG } from './config.js';
 import { hashSeed } from './rng.js';
 import { buildLevel } from './levelgen.js';
 import { simulateLevel, isWinnable } from './sim.js';
+import { carryOverStart } from './crowd.js';
+import { emptyUpgrades, upgradeCost, statsFromUpgrades, UPGRADES } from './economy.js';
 
 export function generateLevel(level, runSeed) {
   const G = CONFIG.gen;
@@ -27,18 +29,19 @@ export function generateLevel(level, runSeed) {
 }
 
 /**
- * Boss hp = the reasonable path's firepower when the boss appears × boss.targetSeconds
- * (never below the level's floor), then re-simulated. Deterministic like everything else.
+ * Boss hp = the damage the reference player REALLY deals to an unkillable boss from its spawn
+ * until the boss has covered boss.targetProgress of its walk (misses, shields, zigzags, charges
+ * and splits included), × ease, never below the level's floor. Then the level is re-simulated
+ * with that boss. Deterministic like everything else.
  */
 function calibrateBoss(def) {
-  let res = simulateLevel(def);
-  if (res.soldiersAtBoss > 0) {
-    const B = CONFIG.boss;
-    const secs = B.introTargetSeconds[def.level - 1] ?? B.targetSeconds;
-    def.boss.hp = Math.max(def.boss.hp, res.powerAtBoss * secs);
-    res = simulateLevel(def);
-  }
-  return res;
+  const B = CONFIG.boss;
+  const target = B.introTargetProgress[def.level - 1] ?? B.targetProgress;
+  const floor = def.boss.hp;
+  def.boss.hp = 1e15;
+  const probe = simulateLevel(def, { measureBoss: target });
+  def.boss.hp = Math.max(floor, probe.bossDamageWindow * def.ease);
+  return simulateLevel(def);
 }
 
 function finish(def, res, attempts, validated) {
@@ -48,15 +51,44 @@ function finish(def, res, attempts, validated) {
   return def;
 }
 
+/**
+ * A whole campaign played by an autopilot, level after level, with the real carry-over rules
+ * (25 % of survivors, weapon kept). aiMistake = chance of picking a random gate; gateUpgrades =
+ * it shoots the gate it waits under; shop = after each level it spends its coins on the cheapest
+ * upgrade, again and again. Returns { reached, levels: [{level, start, weapon, survivors, won}] }.
+ */
+export function simulateCampaign(runSeed, opts = {}) {
+  const maxLevel = opts.maxLevel || 30;
+  const upg = emptyUpgrades();
+  let coins = 0, survivors = 0, weapon = 0;
+  const levels = [];
+  for (let L = 1; L <= maxLevel; L++) {
+    const st = statsFromUpgrades(upg);
+    const start = L === 1 ? st.start : carryOverStart(survivors, st.start);
+    const def = generateLevel(L, runSeed);
+    const r = simulateLevel(def, { start, weapon, rateMult: st.rateMult, damageMult: st.damageMult,
+      aiMistake: opts.aiMistake || 0, aiSeed: hashSeed('mistakes', runSeed, L), gateUpgrades: !!opts.gateUpgrades, aiDodge: opts.aiDodge });
+    levels.push({ level: L, start, weapon, survivors: r.soldiers, won: r.won, time: r.time, upgrades: { ...upg } });
+    if (!r.won) return { reached: L, levels };
+    survivors = r.soldiers; weapon = r.weapon; coins += r.coins;
+    while (opts.shop) {
+      let best = null, cost = Infinity;
+      for (const k of UPGRADES) { const c = upgradeCost(k, upg[k]); if (c < cost) { cost = c; best = k; } }
+      if (!best || cost > coins) break;
+      coins -= cost; upg[best]++;
+    }
+  }
+  return { reached: maxLevel + 1, levels };
+}
+
 /** Short stable fingerprint of a level layout (QA: ?seed= reproducibility). */
 export function levelSignature(def) {
-  const parts = [def.level, def.lanes, Math.round(def.length), Math.round(def.boss.hp * 100)];
+  const parts = [def.level, def.lanes, Math.round(def.length), Math.round(def.boss.hp * 100), def.boss.kind];
   for (const it of def.items) {
-    if (it.t === 'z') parts.push('z', it.type, Math.round(it.at), Math.round(it.x), Math.round(it.hp * 100));
-    else {
+    if (it.t === 'g') {
       parts.push('g', Math.round(it.at));
-      for (const g of it.gates) parts.push(g.kind, g.value ?? '', g.idx ?? '');
-    }
+      for (const g of it.gates) parts.push(g.kind, g.sign ?? '', g.rel !== undefined ? Math.round(g.rel * 1000) : '', g.min ?? '', g.idx ?? '');
+    } else parts.push(it.t, it.type, Math.round(it.at), Math.round(it.x), it.hp !== undefined ? Math.round(it.hp * 100) : '');
   }
   return hashSeed(...parts).toString(16).padStart(8, '0');
 }

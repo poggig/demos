@@ -112,7 +112,7 @@ function goMenu() {
 function startCampaign() {
   const p = prepared;
   prepared = null;
-  run = { mode: 'campaign', seed: p ? p.seed : FIXED_SEED ?? randomSeed(), level: 1, score: 0, survivors: 0, coins: 0, dedicationShown: false };
+  run = { mode: 'campaign', seed: p ? p.seed : FIXED_SEED ?? randomSeed(), level: 1, score: 0, survivors: 0, coins: 0, weapon: 0, dedicationShown: false };
   if (p) run.nextDef = p.def;
   startLevel(upgrades().start);
 }
@@ -124,7 +124,8 @@ function startLevel(startSoldiers) {
   run.def = def;
   run.signature = levelSignature(def);
   if (run.level > save.records.campaign.bestLevel) { save.records.campaign.bestLevel = run.level; markDirty(); }
-  world = new World({ mode: 'campaign', def, start: startSoldiers, rateMult: up.rateMult, damageMult: up.damageMult });
+  // the weapon is kept for the whole run; fire-rate / damage gates only last for the level
+  world = new World({ mode: 'campaign', def, start: startSoldiers, weapon: run.weapon, rateMult: up.rateMult, damageMult: up.damageMult });
   enterPlay();
 }
 
@@ -162,6 +163,7 @@ function onWon() {
   run.score += world.score;
   run.survivors = world.soldiers;
   run.coins += world.coins;
+  run.weapon = world.stats.weapon;
   const rec = save.records.campaign;
   if (run.score > rec.bestScore) rec.bestScore = run.score;
   markDirty(); flushSave(true);
@@ -173,7 +175,7 @@ function onWon() {
   ui.levelComplete({
     level: run.level, survivors: run.survivors,
     nextStart: carryOverStart(run.survivors, upgrades().start),
-    coins: world.coins, score: run.score,
+    coins: world.coins, score: run.score, weapon: run.weapon,
   });
   setTimeout(prepareNextLevel, 120);
 }
@@ -261,6 +263,24 @@ function handleEvents(w, withAudio) {
       case 'zhit': case 'bosshit': audio.hit(); break;
       case 'zdie': audio.zdie(e.b >= 25); break;
       case 'contact': audio.contact(); break;
+      case 'crash': audio.contact(); audio.explosion(true); break;
+      case 'vdie': audio.explosion(true); break;
+      case 'explode': case 'bomb': audio.explosion(e.type === 'bomb'); break;
+      case 'vehicle': audio.horn(); break;
+      case 'acidhit': audio.contact(); audio.splat(); break;
+      case 'spit': audio.acid(); break;
+      case 'ally': audio.pickup(); if (e.s === 'tank') audio.cannon(); break;
+      case 'jets': audio.jets(); break;
+      case 'heli': audio.heli(); break;
+      case 'heliShot': audio.shot(3); break;
+      case 'tankShot': audio.cannon(); break;
+      case 'telegraph': audio.warn(); break;
+      case 'charge': case 'summon': audio.bossRoar(); break;
+      case 'shield': audio.clang(); break;
+      case 'split': audio.splat(); break;
+      case 'throw': audio.whoosh(); break;
+      case 'boulder': audio.explosion(true); break;
+      case 'armor': audio.clang(); break;
       case 'gate': if (e.b > 0) audio.gateGood(); else audio.gateBad(); break;
       case 'gatestep': audio.gateStep(); break;
       case 'weapon': audio.weapon(); break;
@@ -307,10 +327,10 @@ function loop(now) {
     handleEvents(demo, false);
   }
 
-  if (state !== 'pause') renderer.updateFx(dt);
+  const shownWorld = state === 'menu' || (state === 'shop' && shopFrom === 'menu') ? demo : world;
+  if (state !== 'pause') renderer.updateFx(dt, shownWorld);
   if (renderer.coinsArrived > 0) { if (state === 'play') audio.coin(); renderer.coinsArrived = 0; }
-  const shown = state === 'menu' || (state === 'shop' && shopFrom === 'menu') ? demo : world;
-  renderer.draw(shown);
+  renderer.draw(shownWorld);
   if ((state === 'play' || state === 'pause') && world && run) ui.hud(world, run, save);
 
   if (fpsEl) {
@@ -398,7 +418,7 @@ window.GS = {
 };
 if (DEBUG) {
   window.GS.debug = {
-    win() { if (world && !world.endless && world.status === 'running') { world.debugSkipToBoss(); if (!world.boss) world.spawnBoss(); world.damageBoss(world.boss.hp + 1); } },
+    win() { if (world && !world.endless && world.status === 'running') { world.debugSkipToBoss(); if (!world.bosses.length) world.spawnBoss(); for (const b of world.bosses.slice()) world.damageBoss(b, b.hp + 1); } },
     lose() { if (world && world.status === 'running') world.stats.soldiers = 0; },
     toBoss() { if (world) world.debugSkipToBoss(); },
     killAll() { if (world) world.debugKillAll(); },
@@ -406,6 +426,13 @@ if (DEBUG) {
     addCoins(n) { save.coins += Math.floor(n); markDirty(); flushSave(true); if (state === 'shop') ui.shop(save, shopFrom, run ? run.level + 1 : 1); if (state === 'menu') ui.menu(save); },
     speed(x) { timeScale = Math.max(0.1, Math.min(8, Number(x) || 1)); },
     level(n) { startCampaign(); run.level = Math.max(1, Math.floor(n)); startLevel(upgrades().start); },
+    weapon(i) { if (world) world.stats.weapon = Math.max(0, Math.min(CONFIG.weapons.length - 1, i | 0)); },
+    airstrike() { if (world) world.triggerAirstrike(); },
+    heli() { if (world) { world.heliT = CONFIG.bonuses.heli.duration; world.heliCool = 0.3; world.emit('heli', world.crowdX, CONFIG.crowd.y); } },
+    tank() { if (world) { world.tankT = CONFIG.allies.tank.duration; world.tankCool = 0.3; } },
+    vehicle(type = 'bus', x = 270) { if (world) world.spawnVehicle(type, x, world.hpNow * CONFIG.vehicles[type].hpMult); },
+    ally(type = 'tank', x = 270) { if (world) { const a = CONFIG.allies[type]; world.allies.push({ type, x, y: 250, w: a.w, h: a.h, alive: true }); } },
+    zombie(type = 'walker', x = 270, y = 200) { if (world) world.spawnZombie(type, x, y, world.hpNow * CONFIG.zombieTypes[type].hpMult); },
   };
   fpsEl = document.createElement('div');
   fpsEl.id = 'fps';

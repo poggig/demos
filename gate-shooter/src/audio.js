@@ -125,12 +125,66 @@ export class AudioEngine {
   can() { return this.ctx && this.sfxOn && this.ctx.state === 'running'; }
 
   // ── SFX ────────────────────────────────────────────────────────────────────
+  // weapons: 0 rifle · 1 smg · 2 shotgun · 3 minigun · 4 rockets · 5 laser
   shot(weapon) {
-    if (!this.can() || !this.limit('shot', A.shotMinInterval * (weapon === 3 ? 3 : 1))) return;
-    if (weapon === 3) { this.noise(0.22, 0.28, 'lowpass', 900); this.tone(180, 0.2, 'sawtooth', 0.08, 60); return; }
+    if (!this.can() || !this.limit('shot', A.shotMinInterval * (weapon === 4 ? 3 : weapon === 5 ? 2 : 1))) return;
+    if (weapon === 4) { this.noise(0.22, 0.28, 'lowpass', 900); this.tone(180, 0.2, 'sawtooth', 0.08, 60); return; }
+    if (weapon === 5) { this.tone(1800, 0.12, 'sawtooth', 0.05, 500); this.tone(2400, 0.08, 'square', 0.03, 900); return; }
     if (weapon === 2) { this.noise(0.12, 0.25, 'lowpass', 2400); return; }
+    if (weapon === 3) { this.noise(0.04, 0.12, 'highpass', 2600); this.tone(500, 0.03, 'square', 0.025, 260); return; }
     this.noise(0.05, weapon === 1 ? 0.12 : 0.16, 'highpass', 1800);
     this.tone(weapon === 1 ? 900 : 700, 0.04, 'square', 0.03, 300);
+  }
+  explosion(big) {
+    if (!this.can() || !this.limit('boomx', big ? 0.12 : 0.07)) return;
+    this.noise(big ? 0.7 : 0.4, big ? 0.42 : 0.3, 'lowpass', big ? 500 : 800);
+    this.tone(big ? 90 : 130, big ? 0.5 : 0.3, 'sine', 0.3, 35);
+  }
+  horn() {
+    if (!this.can() || !this.limit('horn', 0.6)) return;
+    const t = this.ctx.currentTime;
+    this.tone(330, 0.35, 'sawtooth', 0.09, null, t); this.tone(415, 0.35, 'sawtooth', 0.07, null, t);
+    this.tone(330, 0.35, 'sawtooth', 0.09, null, t + 0.42); this.tone(415, 0.35, 'sawtooth', 0.07, null, t + 0.42);
+  }
+  jets() {
+    if (!this.can()) return;
+    this.noise(1.6, 0.25, 'bandpass', 1400, undefined, undefined, 0.6);
+    this.tone(900, 1.4, 'sawtooth', 0.04, 250);
+  }
+  heli() {
+    if (!this.can()) return;
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 10; i++) this.noise(0.07, 0.14, 'lowpass', 500, t + i * 0.09);
+  }
+  cannon() {
+    if (!this.can() || !this.limit('cannon', 0.2)) return;
+    this.noise(0.3, 0.3, 'lowpass', 600); this.tone(110, 0.25, 'square', 0.12, 50);
+  }
+  pickup() {
+    if (!this.can()) return;
+    const t = this.ctx.currentTime;
+    [67, 72, 76, 79, 84].forEach((m, i) => this.tone(midiHz(m), 0.1, 'square', 0.08, null, t + i * 0.05));
+  }
+  acid() {
+    if (!this.can() || !this.limit('acid', 0.1)) return;
+    this.noise(0.18, 0.18, 'bandpass', 900, undefined, undefined, 3); this.tone(400, 0.15, 'sine', 0.06, 900);
+  }
+  splat() {
+    if (!this.can() || !this.limit('splat', 0.08)) return;
+    this.noise(0.2, 0.2, 'lowpass', 1200); this.tone(220, 0.15, 'triangle', 0.08, 90);
+  }
+  warn() {
+    if (!this.can() || !this.limit('warn', 0.5)) return;
+    const t = this.ctx.currentTime;
+    this.tone(880, 0.12, 'square', 0.07, null, t); this.tone(660, 0.16, 'square', 0.07, null, t + 0.14);
+  }
+  clang() {
+    if (!this.can()) return;
+    this.tone(1200, 0.4, 'triangle', 0.1, 900); this.tone(1700, 0.3, 'square', 0.04, 1200);
+  }
+  whoosh() {
+    if (!this.can() || !this.limit('whoosh', 0.3)) return;
+    this.noise(0.5, 0.18, 'bandpass', 700, undefined, undefined, 1.2);
   }
   hit() {
     if (!this.can() || !this.limit('hit', A.hitMinInterval)) return;

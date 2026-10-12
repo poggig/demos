@@ -1,9 +1,11 @@
 // CONFIG — every balance / tuning number of Gate Shooter lives here.
 // Units: px are LOGICAL pixels on the fixed 540×960 portrait canvas; times in seconds.
+// "× zombieHp" means: multiplied by zombieHp(level) = difficulty.hpBase × hpGrowth^(level−1),
+// so damage/HP of everything scales together with the level.
 // Personalizable CONTENT (texts, names, colours, dedication) lives in theme.js, not here.
 
 export const CONFIG = {
-  version: '1.0.0',
+  version: '1.1.0',
 
   // ── View & loop ────────────────────────────────────────────────────────────
   view: { w: 540, h: 960, dprCap: 2 },
@@ -19,12 +21,11 @@ export const CONFIG = {
     bossBrake: 1.4,           // s for the road to stop when the boss appears
   },
   threeLanesFromLevel: 4,     // campaign: 2 lanes on levels 1..3, 3 lanes from 4
-  // (endless switches at the equivalent level, see endless.distancePerLevel)
 
   // ── The crowd (player) ─────────────────────────────────────────────────────
   crowd: {
     y: 800,                   // centre of the formation
-    startSoldiers: 5,         // base starting crowd (shop upgrade adds to this)
+    startSoldiers: 1,         // every run starts with ONE soldier (shop "Recruits" adds to it)
     maxSoldiers: 99999,       // hard cap
     spacing: 15,              // formation spacing (px) — formation grows ~sqrt(n)
     squash: 0.72,             // vertical squash of the formation (perspective)
@@ -37,123 +38,202 @@ export const CONFIG = {
   maxBullets: 140,            // on-screen bullet cap: beyond it shots MERGE (DPS kept)
   fireTick: 1 / 20,           // bullets are emitted in 20 small sub-volleys per second
   baseDamage: 1,              // damage of one rifle bullet before multipliers
-  weapons: [                  // weapon ladder — a weapon gate moves one step right
+  // Weapon ladder — a WEAPON gate moves one step right. The weapon is KEPT for the whole run.
+  // Per-soldier DPS: 2.4 → 3.3 → 4.3 → 5.5 → 7.0 (+splash) → 9.0 (+pierce): every step ≈ +30 %.
+  weapons: [
     { id: 'rifle',   interval: 0.42, damage: 1.0,  pellets: 1, speed: 950,  spread: 0.035, radius: 4,   gateHits: 1 },
-    { id: 'smg',     interval: 0.17, damage: 0.55, pellets: 1, speed: 1050, spread: 0.08,  radius: 3.5, gateHits: 1 },
-    { id: 'shotgun', interval: 0.70, damage: 0.8,  pellets: 3, speed: 880,  spread: 0.21,  radius: 4,   gateHits: 1 },
-    { id: 'rocket',  interval: 1.00, damage: 4.6,  pellets: 1, speed: 640,  spread: 0.02,  radius: 7,   gateHits: 4,
+    { id: 'smg',     interval: 0.15, damage: 0.5,  pellets: 1, speed: 1050, spread: 0.08,  radius: 3.5, gateHits: 1 },
+    { id: 'shotgun', interval: 0.60, damage: 0.85, pellets: 3, speed: 880,  spread: 0.21,  radius: 4,   gateHits: 1 },
+    { id: 'minigun', interval: 0.06, damage: 0.33, pellets: 1, speed: 1150, spread: 0.06,  radius: 3.5, gateHits: 1 },
+    { id: 'rocket',  interval: 0.80, damage: 5.6,  pellets: 1, speed: 660,  spread: 0.02,  radius: 7,   gateHits: 4,
       splash: 72, splashFactor: 0.55 },
+    { id: 'laser',   interval: 0.40, damage: 3.6,  pellets: 1, speed: 1500, spread: 0.01,  radius: 5,   gateHits: 3,
+      pierce: true },            // passes through every zombie in its line
   ],
   stats: { maxRateMult: 4, maxDamageMult: 25 },
 
   // ── Gates ──────────────────────────────────────────────────────────────────
-  gateHitsPerStep: 40,        // +/− gates: +1 every N hits ("colpi" = bullets reaching the gate)
-  multHitsPerStep: 240,       // ×/÷ gates: one ladder step every N hits
-  multLadder: [-4, -3, -2, 2, 3, 4, 5], // negative = ÷|n|, positive = ×n (÷3 → ÷2 → ×2 → ×3 …)
+  // Soldier-gate values are RELATIVE to the crowd when the row appears (small crowd → +1, +2…;
+  // big crowd → capped by the level). Red gates are relative too, so they always hurt.
+  gateHitsPerStep: 100,       // +/− gates: +1 every N hits ("colpi" = bullets reaching the gate)
+  multHitsPerStep: 1200,      // ×/÷ gates: one ladder step every N hits (÷2 → ×2 is a big swing)
+  multLadder: [-3, -2, 2, 3], // negative = ÷|n|, positive = ×n (÷3 → ÷2 → ×2 → ×3)
   gates: {
     h: 104,                   // gate panel height
     pad: 7,                   // gap between neighbouring panels
-    addCapPerScale: 15,       // a +/− gate can be shot up to +addCap×scale(level)
+    goodRel: [0.3, 0.75],     // green +n = crowd × rel …
+    goodMin: [1, 3],          // … at least this (so 1 soldier still gets +1..+3) …
+    addCap: 10,               // … at most addCap × gateScale(level)
+    badRel: [0.3, 0.55],      // red −n = crowd × rel (at least 1) …
+    badCap: 40,               // … at most badCap × gateScale(level)
+    multGainCap: 12,          // a green ×n only shows while it adds ≤ multGainCap × gateScale soldiers;
+                              // above that it becomes the best +n (no runaway ×2 → ×3 → ×2 snowball)
+    repairGood: 1.2,          // shooting a green +n can raise it up to ×1.2 (at least +1)
+    repairBad: 0.5,           // shooting a red −n can raise it up to +|n|×0.5 (a −6 becomes at best +3)
     rare: {
-      rateValue: 0.25,        // "+fire rate" gate: +25 % fire rate
-      damageValue: 1.5,       // "×damage" gate: damage ×1.5
+      rateValue: 0.25,        // "+fire rate" gate: +25 % fire rate (until the end of the level)
+      damageValue: 1.5,       // "×damage" gate: damage ×1.5 (until the end of the level)
       weaponMaxedDamage: 1.3, // weapon gate when already on the last weapon → ×1.3 damage
     },
+  },
+
+  // ── Bonus gates: clear the map ─────────────────────────────────────────────
+  bonuses: {
+    airstrike: { bombs: 14, duration: 1.4, radius: 120, dmgMult: 40, bossFrac: 0.12 },
+    heli: { duration: 12, fireEvery: 0.08, dmgMult: 0.75, offsetX: 95, hoverY: 600 },
   },
 
   // ── Zombies ────────────────────────────────────────────────────────────────
   // hp = hpMult × zombieHp(level); speed = own walking speed on top of the scroll.
   // weight = minimum soldiers killed on contact; home = sideways homing px/s.
-  hpPerSoldier: 2,            // contact kills max(weight, ceil(hpLeft / hpPerSoldier))
+  hpPerSoldier: 2.5,          // contact kills max(weight, ceil(hpLeft / hpPerSoldier))
   zombieTypes: {
-    walker:   { hpMult: 1.0, speed: 28, r: 17, weight: 1, coins: 1, score: 10, home: 34 },
-    runner:   { hpMult: 0.5, speed: 92, r: 14, weight: 1, coins: 1, score: 15, home: 62 },
-    brute:    { hpMult: 4.2, speed: 12, r: 27, weight: 5, coins: 4, score: 50, home: 18 },
-    splitter: { hpMult: 1.6, speed: 24, r: 21, weight: 2, coins: 2, score: 20, home: 26,
+    walker:   { hpMult: 1.0, speed: 30, r: 17, weight: 1, coins: 1, score: 10, home: 38 },
+    runner:   { hpMult: 0.55, speed: 95, r: 14, weight: 1, coins: 1, score: 15, home: 70,
+      zigzag: { amp: 42, freq: 0.9 } },                 // sprints in a zigzag (px, Hz)
+    brute:    { hpMult: 4.5, speed: 14, r: 27, weight: 4, coins: 4, score: 50, home: 20,
+      armor: 0.5, armorUntil: 0.5 },                    // takes ×0.5 damage until it drops to 50 % hp
+    exploder: { hpMult: 1.1, speed: 58, r: 19, weight: 5, coins: 2, score: 25, home: 60,
+      explode: { r: 85, dmgMult: 4 } },                 // blows up when killed (hurts zombies) or on contact
+    spitter:  { hpMult: 1.3, speed: 30, r: 18, weight: 2, coins: 2, score: 30, home: 24,
+      spit: { holdY: [300, 430], every: 2.6, hold: 6, speed: 280, dmgMult: 1.0 } }, // stops and spits acid
+    splitter: { hpMult: 1.8, speed: 25, r: 21, weight: 2, coins: 2, score: 20, home: 28,
       splitInto: 'mini', splitCount: 2 },
-    mini:     { hpMult: 0.45, speed: 48, r: 12, weight: 1, coins: 0, score: 5, home: 54 },
+    shaman:   { hpMult: 1.6, speed: 22, r: 19, weight: 2, coins: 3, score: 40, home: 18,
+      heal: { r: 140, perSec: 0.12, holdY: 250, hold: 9 } },  // heals the horde around it
+    mini:     { hpMult: 0.45, speed: 50, r: 12, weight: 1, coins: 0, score: 5, home: 56 },
   },
   homingFromY: 230,           // zombies start steering toward the crowd below this y
-  maxZombies: 140,
+  maxZombies: 160,
+  maxEnemyShots: 48,          // acid globs / boulders pool
+
+  // ── Vehicles ───────────────────────────────────────────────────────────────
+  vehicles: {                 // enemy: drive down a lane after a warning; shoot them or dodge
+    contactDiv: 3,            // a crash kills max(weight, ceil(hpLeft / (hpPerSoldier × contactDiv)))
+    bus: { hpMult: 14, speed: 55, w: 66, h: 132, weight: 12, coins: 8, score: 150, warn: 1.4 },
+    car: { hpMult: 5, speed: 200, w: 46, h: 78, weight: 6, coins: 4, score: 70, warn: 1.1,
+      swerveY: 250, swerveSpeed: 240 },               // locks onto the crowd's lane once
+  },
+  allies: {                   // friendly pickups on the road: drive into them
+    tank: { duration: 14, fireEvery: 0.8, dmgMult: 7, splash: 90, w: 58, h: 78 },
+    truck: { rel: 0.6, min: 3, capMult: 2, w: 52, h: 84 },   // +crowd×0.6 soldiers (≥3, ≤2×addCap×scale)
+  },
 
   // ── Boss ───────────────────────────────────────────────────────────────────
   boss: {
-    // Boss hp is CALIBRATED by the generator: the reasonable path's firepower when the boss
-    // appears × targetSeconds, floored at minHpMult × zombieHp(level). Then re-validated.
-    targetSeconds: 9,
-    introTargetSeconds: [6, 7, 8], // gentler bosses on levels 1, 2, 3
+    // Boss hp is CALIBRATED by the generator: the damage the reference player really deals until
+    // the boss has covered targetProgress of its walk (so fast or charging bosses are fair too),
+    // floored at minHpMult × zombieHp(level). Then re-validated (sim.bossMaxProgress).
+    targetProgress: 0.7,
+    introTargetProgress: [0.3, 0.45, 0.6], // gentler bosses on levels 1, 2, 3
     minHpMult: 12,
     enterSpeed: 150,          // px/s: quick entrance down to enterY (clear of the HUD) …
     enterY: 270,
+    specialFromY: 80,         // specials start once the boss is this far down (in view, below the HUD pills)
     speed: 26,                // … then a slow walk toward the crowd
     r: 66,
     home: 70,
     coins: 25,
     score: 500,
     stompEvery: 1.15,         // s between stomps (light screen shake)
+    firstSpecial: 0.5,        // first special ≤ this many s after specialFromY (min(firstSpecial, every × 0.25)), then every 'every'
+    // one archetype per level, in this order (then the cycle repeats as a faster "elite")
+    order: ['king', 'butcher', 'acid', 'tank', 'blob', 'necro', 'giant', 'hound'],
+    eliteCooldown: 0.85,      // special-move cooldowns ×0.85 per completed cycle
+    king:    { every: 3.4, summon: 3, type: 'walker' },                 // summons the horde
+    butcher: { every: 4.2, telegraph: 0.8, dist: 130, time: 0.35 },     // telegraphed charge
+    acid:    { every: 2.5, globs: 3, gap: 0.28, speed: 300, dmgMult: 2.5 }, // aimed acid stream: globs 'gap' s apart
+    tank:    { every: 5, shield: 2, reduce: 0.1 },                      // armour-up phases
+    blob:    { splitAt: 0.5, splitOffset: 55 },                                          // splits in two at 50 %
+    necro:   { every: 3.8, summon: 4, type: 'mini' },                   // raises the dead
+    giant:   { every: 3.2, telegraph: 1.1, radius: 78, killFrac: 0.22, killMin: 3 }, // boulders
+    hound:   { zigAmp: 150, zigFreq: 0.8, speedMult: 1.45 },            // zigzag rush
   },
 
   // ── Difficulty curves (campaign: level; endless: equivalent level) ─────────
   difficulty: {
-    hpBase: 4,                // walker hp on level 1
-    hpGrowth: 1.13,           // zombieHp(level) = hpBase × hpGrowth^(level−1)
-    gateGrowth: 1.155,        // gate values scale by gateGrowth^(level−1) (faster than hp: waves grow too)
-    waveBase: 6,              // zombies per wave on level 1
-    wavePerLevel: 0.3,        //   … + this per level
-    waveMax: 16,
-    waveRamp: [0.6, 1.4],     // inside a level, waves grow from 60 % to 140 % of that size
-    badChanceBase: 0.32,      // chance a non-rare lane holds a red gate
-    badChancePerLevel: 0.025,
+    hpBase: 3,                // walker hp on level 1
+    hpGrowth: 1.14,           // zombieHp(level) = hpBase × hpGrowth^(level−1) …
+    introHpMult: [0.65, 0.85],// … × this on levels 1 and 2 (a tutorial for a crowd of 1–5)
+    gateGrowth: 1.13,         // gate caps scale by gateGrowth^(level−1)
+    waveBase: 8,              // zombies per wave on level 1
+    wavePerLevel: 1.0,        //   … + this per level
+    waveMax: 34,
+    waveRamp: [0.35, 1.35],   // inside a level, waves grow from 35 % to 135 % of that size
+    badChanceBase: 0.25,      // chance a non-rare lane holds a red gate
+    badChancePerLevel: 0.04,
     badChanceMax: 0.6,
-    multGoodChance: 0.34,     // a green gate is ×n (else +n)
-    multBadChance: 0.3,       // a red gate is ÷n (else −n)
-    addGood: [5, 11],         // +n range at scale 1
-    addBad: [3, 7],           // −n range at scale 1
-    rareChance: 0.2,          // chance a gate row carries one rare gate
-    rareWeights: { rate: 3, damage: 3, weapon: 2 },
+    multGoodChance: 0.12,     // a green gate is ×n (else +n) …
+    mult3Chance: 0.2,         // … and that ×n is a ×3 (else ×2)
+    multBadChance: 0.12,      // a red gate is ÷n (else −n) …
+    multBadPerLevel: 0.03,    //   … more often on later levels …
+    multBadMax: 0.35,
+    div3Chance: 0.3,          // … and that ÷n is a ÷3 (else ÷2)
+    rareChance: 0.3,          // chance a gate row carries one special gate
+    rareWeights: { weapon: 1, rate: 2, damage: 2, airstrike: 1.5, heli: 1.5 },
     mix: [                    // zombie-type weights by level (first row whose level ≤ L wins)
       { from: 1,  w: { walker: 10 } },
-      { from: 2,  w: { walker: 8, runner: 2 } },
-      { from: 3,  w: { walker: 7, runner: 3, brute: 1 } },
-      { from: 5,  w: { walker: 6, runner: 3, brute: 1.5, splitter: 1.5 } },
-      { from: 9,  w: { walker: 5, runner: 4, brute: 2, splitter: 2 } },
-      { from: 15, w: { walker: 4, runner: 4, brute: 2.5, splitter: 2.5 } },
+      { from: 2,  w: { walker: 8, runner: 3 } },
+      { from: 3,  w: { walker: 7, runner: 3, brute: 1, exploder: 1 } },
+      { from: 4,  w: { walker: 6, runner: 3, brute: 1.2, exploder: 1.2, spitter: 0.8 } },
+      { from: 5,  w: { walker: 6, runner: 3, brute: 1.5, exploder: 1.2, spitter: 1, splitter: 1.5 } },
+      { from: 6,  w: { walker: 5, runner: 3, brute: 1.5, exploder: 1.5, spitter: 1.2, splitter: 1.5, shaman: 0.6 } },
+      { from: 10, w: { walker: 4, runner: 4, brute: 2, exploder: 1.8, spitter: 1.5, splitter: 2, shaman: 0.9 } },
     ],
   },
 
   // ── Level generator ────────────────────────────────────────────────────────
   gen: {
-    levelLength: 6600,        // px of road before the boss (~44 s) → ~50–60 s with the boss
-    firstBlockAt: 420,
-    firstRowBoost: 1.5,       // the opening row is all-green +n gates worth ×1.5
-    blockGap: [560, 720],     // distance between blocks
-    gapShrinkPerLevel: 6,     // blocks get closer as levels rise …
-    minGap: 470,              // … down to this
+    levelLength: 6600,        // px of road before the boss (~44 s) → ~55 s with the boss
+    firstBlockAt: 380,
+    blockGap: [520, 680],     // distance between blocks
+    gapShrinkPerLevel: 5,     // blocks get closer as levels rise …
+    minGap: 440,              // … down to this
     weights: { gates: 3, wave: 4, mixed: 3 },
-    zombieRowGap: 64,         // vertical spacing between zombie rows inside a wave
-    zombiesPerRow: [3, 5],
+    zombieRowGap: 58,         // vertical spacing between zombie rows inside a wave
+    zombiesPerRow: [4, 7],
     mixedFrontGap: [110, 190],// zombies of a mixed block walk this far in front of the gates
+    weaponGateBy: 0.7,        // every campaign level offers a weapon gate before 70 % of the road
+    gentleUntil: 0.3,         // the first 30 % of a level (the crowd was just cut to 25 %) …
+    gentleMix: { walker: 8, runner: 2 }, // … only sends basic zombies, and its red gates are
+    gentleBad: [0, 0.5],      // … ×0 on level 1 and ×0.5 later (never ÷): a crowd of 1–3 must not be wiped
+    vehicleFrom: 2,           // enemy vehicles from level 2 …
+    vehicleChance: 0.3,       // … in this share of wave / mixed blocks
+    carFrom: 4,               // cars (fast, swerving) from level 4; buses before
+    allyChance: 0.3,          // an allied pickup (tank / truck) follows this share of gate rows
     maxAttempts: 12,          // regenerate with a new sub-seed up to this many times …
     easeStep: 0.88,           // … then ease the level (hp & counts ×0.88 per try)
     maxEaseTries: 20,
   },
 
-  // ── Winnability simulator ("reasonable path": best gate per row, no gate aiming) ─
+  // ── Winnability simulator ──────────────────────────────────────────────────
+  // The "reasonable path": best gate per row, no gate aiming; it hunts threats, side-steps
+  // vehicles and (imperfectly — pessimistic) acid and boulders.
+  // It enters level L with the REFERENCE state a reasonable player brings from levels 1..L−1
+  // (25 % carry-over + the weapons collected); tests prove a chained run really reaches it.
   sim: {
     maxSeconds: 150,          // safety stop
-    bossMaxProgress: 0.7,     // boss must die before covering 70 % of its walk
+    bossMaxProgress: 0.85,    // boss must die before covering 85 % of its walk (12 s ≈ 72 %)
+    bonusValue: 0.45,         // air strike / helicopter gate valued as +45 % firepower
+    weaponValue: 0.6,         // a weapon gate is worth +60 % on top of its DPS gain (it is KEPT for the run)
+  },
+  ref: {
+    start: [1, 3, 7, 10, 12, 14, 16, 18, 22, 26], // reference starting crowd on levels 1..10 …
+    startGrowth: 1.15,        // … then ×1.15 per level (≈ half of what a careful chained run brings)
+    weaponPerLevel: 0.9,      // reference weapon = floor((L−1) × 0.9), capped at the last weapon
   },
 
   // ── Campaign / endless ─────────────────────────────────────────────────────
   carryOver: 0.25,            // next level starts with 25 % of survivors (min = shop start)
   levelClearBonus: 100,       // × level
   endless: {
-    distancePerLevel: 1300,   // equivalent level +1 every N px (~6–8 s)
-    hpGrowth: 1.21,           // endless zombies grow exponentially …
-    gateLinear: 0.12,         // … while gate values only grow linearly: ×(1 + 0.12 × (eqLevel−1))
-    multChance: 0.2,          // and green ×n gates are 5× rarer → the crowd can't snowball, the run always ends
+    distancePerLevel: 2200,   // equivalent level +1 every N px (~12–15 s)
+    hpGrowth: 1.13,           // endless zombies grow exponentially …
+    rampDistance: 9000,       // waves grow from waveRamp[0] to full size over this distance
+    gateLinear: 0.12,         // … while gate caps only grow linearly: ×(1 + 0.12 × (eqLevel−1))
+    multChance: 0.5,          // and green ×n gates are rarer → the run always ends
     speedUpPerLevel: 0.02,    // scroll +2 % per equivalent level …
-    maxSpeedMult: 1.7,        // … capped
+    maxSpeedMult: 1.6,        // … capped
     chunkLen: 2200,
     pxPerPoint: 10,           // score = distance / pxPerPoint + kill points
   },
@@ -161,9 +241,9 @@ export const CONFIG = {
   // ── Economy / shop ─────────────────────────────────────────────────────────
   coinScalePerLevel: 0.15,    // coins per kill × (1 + 0.15 × (level−1))
   shop: {
-    start:  { baseCost: 40, growth: 1.5,  perLevel: 2,    max: 40 }, // +2 starting soldiers
-    damage: { baseCost: 50, growth: 1.55, perLevel: 0.12, max: 40 }, // +12 % damage
-    rate:   { baseCost: 50, growth: 1.55, perLevel: 0.10, max: 30 }, // +10 % fire rate
+    start:  { baseCost: 40, growth: 1.45, perLevel: 1,    max: 30 }, // +1 starting soldier
+    damage: { baseCost: 50, growth: 1.5,  perLevel: 0.12, max: 40 }, // +12 % damage
+    rate:   { baseCost: 50, growth: 1.5,  perLevel: 0.10, max: 30 }, // +10 % fire rate
   },
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -175,11 +255,13 @@ export const CONFIG = {
 
   // ── Feel ───────────────────────────────────────────────────────────────────
   fx: {
-    maxParticles: 420,
+    maxParticles: 480,
     maxFloaters: 24,
     shakeBoss: 7,             // px, light
     shakeStomp: 3,
+    shakeBomb: 9,
     popScale: 0.38,           // soldier-number "pop" when it changes
+    laneHintFromY: 430,       // the lane that WILL be applied lights up once the row is this low
   },
 
   // ── Audio ──────────────────────────────────────────────────────────────────

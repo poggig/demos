@@ -1,5 +1,6 @@
 // IT + EN from THEME.text — detected from the browser, switchable, persisted by main.js.
 import { THEME } from './theme.js';
+import { bossKind, bossElite } from './levelgen.js';
 
 export const LANGS = ['it', 'en'];
 let lang = 'en';
@@ -30,8 +31,11 @@ export function pick(v) {
   return v[lang] ?? v.en ?? '';
 }
 
+const ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X'];
+/** Name of the boss of a level: its archetype's THEME name, + " II", " III"… for elite cycles. */
 export function bossName(level) {
-  const list = THEME.names.bosses;
-  return list.length ? pick(list[(Math.max(1, level) - 1) % list.length]) : '';
+  const name = pick(THEME.names.bosses[bossKind(level)]);
+  const e = bossElite(level);
+  return name ? name + (ROMAN[e] ?? ' ' + (e + 1)) : '';
 }
 export function zombieName(type) { return pick(THEME.names.zombies[type]); }

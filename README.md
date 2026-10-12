@@ -7,7 +7,7 @@ zero build. Each folder is self-contained: open its `index.html` over any static
 
 | Game | Link | About |
 |------|------|-------|
-| 🧟 **Gate Shooter** | **https://poggig.github.io/demos/gate-shooter/** | A portrait crowd-runner for phones: drag your squad through +/−/×/÷ gates, shoot the gates to improve them, mow down the horde and the boss. Infinite procedural campaign (every level proven winnable by a simulator), Endless mode, shop, Italian + English. Fully procedural art and synthesized audio. |
+| 🧟 **Gate Shooter** | **https://poggig.github.io/demos/gate-shooter/** | A portrait crowd-runner for phones: start with one soldier, grow your squad through +/−/×/÷ gates, collect 6 weapons, call air strikes and helicopters, dodge buses and acid, and beat 8 different bosses. Infinite procedural campaign (every level proven winnable by a simulator), Endless mode, shop, Italian + English. Fully procedural art and synthesized audio. |
 | ⚔️ **Chronicles of Azurerune** | **https://poggig.github.io/demos/dragon/** | A 5-level / 26-act action platformer. Five heroes with personalized skills + ultimates, live party swap, stealth, an underwater air-gauge, a fishing minigame, a masquerade, and a boss-rush finale against a dragon. |
 | 🌸 **Flor de Sal** | **https://poggig.github.io/demos/** | A short, warm personalized gift game (a florist's retirement) — playable in Portuguese + English. |
 

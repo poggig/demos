@@ -1,8 +1,10 @@
 // Gate logic — pure. A gate row holds one gate per lane; crossing a row applies ONLY the gate
-// of the lane under the crowd's centre. Shooting a soldier gate improves it.
+// of the lane under the crowd's centre. Shooting a soldier gate improves it (up to a cap).
 import { CONFIG } from './config.js';
 
 export const MINUS = '−', TIMES = '×', DIVIDE = '÷';
+export const BONUS_KINDS = ['airstrike', 'heli'];
+export const RARE_KINDS = ['rate', 'damage', 'weapon', 'airstrike', 'heli'];
 
 export function makeAddGate(value, cap = Infinity) {
   return { kind: 'add', value: Math.trunc(value), cap: Math.max(cap, value), progress: 0 };
@@ -21,11 +23,42 @@ export function makeRareGate(kind) {
   const r = CONFIG.gates.rare;
   if (kind === 'rate') return { kind, value: r.rateValue, progress: 0 };
   if (kind === 'damage') return { kind, value: r.damageValue, progress: 0 };
-  if (kind === 'weapon') return { kind, value: 1, progress: 0 };
-  throw new Error('unknown rare gate ' + kind);
+  if (RARE_KINDS.includes(kind)) return { kind, value: 1, progress: 0 };
+  throw new Error('unknown special gate ' + kind);
+}
+
+/**
+ * Turn a generator spec into a live gate, sizing +/− gates on the CURRENT crowd:
+ *  green {kind:'add', sign:+1, rel, min} → +clamp(round(crowd×rel), min, addCap×scale)
+ *  red   {kind:'add', sign:−1, rel}      → −clamp(round(crowd×rel), 1, badCap×scale)
+ * so one soldier sees +1/+2/+3, a big crowd sees capped values, and red gates always hurt.
+ */
+export function resolveGateSpec(spec, crowd, scale) {
+  const G = CONFIG.gates;
+  if (spec.kind === 'add') {
+    const n = Math.max(0, crowd);
+    if (spec.sign > 0) {
+      const hi = Math.max(spec.min, Math.round(G.addCap * scale));
+      const v = Math.max(spec.min, Math.min(hi, Math.round(n * spec.rel)));
+      return makeAddGate(v, Math.max(v + 1, Math.round(v * G.repairGood)));
+    }
+    const hi = Math.max(1, Math.round(G.badCap * scale));
+    const m = Math.max(1, Math.min(hi, Math.round(n * spec.rel)));
+    return makeAddGate(-m, Math.max(1, Math.round(m * G.repairBad)));
+  }
+  if (spec.kind === 'mult') {
+    const f = CONFIG.multLadder[spec.idx];
+    if (f > 0 && crowd * (f - 1) > G.multGainCap * scale) {     // too big a jump: offer the best +n
+      const v = Math.max(1, Math.round(G.addCap * scale));
+      return makeAddGate(v, Math.max(v + 1, Math.round(v * G.repairGood)));
+    }
+    return makeMultGate(spec.idx);
+  }
+  return makeRareGate(spec.kind);
 }
 
 export const isSoldierGate = g => g.kind === 'add' || g.kind === 'mult';
+export const isBonusGate = g => BONUS_KINDS.includes(g.kind);
 export const multFactor = g => CONFIG.multLadder[g.idx];
 
 /** Soldiers after crossing a soldier gate: integer, rounded DOWN, never below 0. */
@@ -44,15 +77,15 @@ export function applySoldierGate(soldiers, g) {
 export function gateTone(g) {
   if (g.kind === 'add') return g.value > 0 ? 'good' : g.value < 0 ? 'bad' : 'neutral';
   if (g.kind === 'mult') return multFactor(g) > 0 ? 'good' : 'bad';
-  return 'good'; // rare gates always help
+  return 'good'; // special gates always help
 }
 
 /**
  * Register `hits` bullet hits on a gate ("colpi": every bullet that reaches the gate is a hit —
  * a merged bullet counts once, so a huge crowd can't max every gate instantly). Returns steps gained.
  *  +/− : +1 every CONFIG.gateHitsPerStep hits, up to the gate's cap.
- *  ×/÷ : one ladder step every CONFIG.multHitsPerStep hits (÷3 → ÷2 → ×2 → ×3 …).
- *  rare gates do not change when shot (they still stop the bullet).
+ *  ×/÷ : one ladder step every CONFIG.multHitsPerStep hits (÷3 → ÷2 → ×2 → ×3).
+ *  special gates do not change when shot (they still stop the bullet).
  */
 export function hitGate(g, hits) {
   let steps = 0;
@@ -75,7 +108,7 @@ export function hitGate(g, hits) {
   return steps;
 }
 
-/** Display label of a soldier gate: "+5", "−3", "×2", "÷3". */
+/** Display label of a gate value: "+5", "−3", "×2", "÷3", "+25%", "×1.5". */
 export function gateLabel(g) {
   if (g.kind === 'add') return g.value < 0 ? MINUS + (-g.value) : '+' + g.value;
   if (g.kind === 'mult') { const f = multFactor(g); return f > 0 ? TIMES + f : DIVIDE + (-f); }
@@ -91,7 +124,8 @@ export function weaponDps(weaponIndex) {
 }
 
 /**
- * Apply any gate to the player stats { soldiers, rateMult, damageMult, weapon } (mutates).
+ * Apply a gate to the player stats { soldiers, rateMult, damageMult, weapon } (mutates).
+ * Bonus gates (air strike / helicopter) don't touch the stats: the World triggers them.
  * Returns { before, after } soldiers for feedback.
  */
 export function applyGate(stats, g) {
@@ -114,9 +148,10 @@ export function statsPower(s) {
   return s.soldiers * weaponDps(s.weapon) * s.rateMult * s.damageMult;
 }
 
-/** Firepower after crossing gate g (stats untouched). */
+/** Value of crossing gate g, in firepower (stats untouched). Bonus gates count as +bonusValue. */
 export function powerAfter(stats, g) {
+  if (isBonusGate(g)) return statsPower(stats) * (1 + CONFIG.sim.bonusValue);
   const s = { soldiers: stats.soldiers, rateMult: stats.rateMult, damageMult: stats.damageMult, weapon: stats.weapon };
   applyGate(s, g);
-  return statsPower(s);
+  return statsPower(s) * (g.kind === 'weapon' ? 1 + CONFIG.sim.weaponValue : 1);
 }

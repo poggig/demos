@@ -1,16 +1,21 @@
 // Raw procedural generation — pure & deterministic: (mode, level | distance, seed) → spawn list.
 // generator.js wraps buildLevel() with the winnability check (reject / regenerate / ease).
+// Item kinds: g = gate row (relative specs, sized on the crowd when it appears), z = zombie,
+// v = enemy vehicle (bus / car), a = allied pickup (tank / truck).
 import { CONFIG } from './config.js';
 import { Rng, hashSeed } from './rng.js';
 import { ladderIndex } from './gates.js';
 
 const D = CONFIG.difficulty;
 const G = CONFIG.gen;
+const GT = CONFIG.gates;
 
 export function zombieHpBase(level, endless = false) {
   const growth = endless ? CONFIG.endless.hpGrowth : D.hpGrowth;
-  return D.hpBase * Math.pow(growth, Math.max(0, level - 1));
+  const intro = D.introHpMult[Math.floor(level) - 1] ?? 1;
+  return D.hpBase * intro * Math.pow(growth, Math.max(0, level - 1));
 }
+/** Scale of the gate CAPS (green +n max, red −n max) at a level. */
 export function gateScale(level, endless = false) {
   if (endless) return 1 + CONFIG.endless.gateLinear * Math.max(0, level - 1);
   return Math.pow(D.gateGrowth, Math.max(0, level - 1));
@@ -27,50 +32,84 @@ export function zombieMix(level) {
   for (const row of D.mix) if (level >= row.from) w = row.w;
   return w;
 }
+export function bossKind(level) {
+  const o = CONFIG.boss.order;
+  return o[(Math.max(1, level) - 1) % o.length];
+}
+export function bossElite(level) { return Math.floor((Math.max(1, level) - 1) / CONFIG.boss.order.length); }
 /** Endless: equivalent (fractional) level reached at a distance. */
 export function eqLevel(distance) { return 1 + Math.max(0, distance) / CONFIG.endless.distancePerLevel; }
 
-// ── gate rows ────────────────────────────────────────────────────────────────
-function goodGate(rng, scale, endless) {
-  if (rng.chance(D.multGoodChance * (endless ? CONFIG.endless.multChance : 1))) return { kind: 'mult', idx: ladderIndex(rng.chance(0.25) ? 3 : 2) };
-  const v = Math.max(1, Math.round(rng.range(D.addGood[0], D.addGood[1]) * scale));
-  return { kind: 'add', value: v, cap: Math.round(CONFIG.gates.addCapPerScale * scale) };
+/** Reference state a reasonable player brings into level L (proved by the chained-run test). */
+export function refStart(level) {
+  const R = CONFIG.ref, n = R.start.length, L = Math.max(1, level);
+  if (L <= n) return R.start[L - 1];
+  return Math.max(1, Math.round(R.start[n - 1] * Math.pow(R.startGrowth, L - n)));
 }
-function badGate(rng, scale) {
-  if (rng.chance(D.multBadChance)) return { kind: 'mult', idx: ladderIndex(rng.chance(0.3) ? -3 : -2) };
-  const v = -Math.max(1, Math.round(rng.range(D.addBad[0], D.addBad[1]) * scale));
-  return { kind: 'add', value: v, cap: Math.round(CONFIG.gates.addCapPerScale * scale) };
+export function refWeapon(level) {
+  return Math.min(CONFIG.weapons.length - 1, Math.floor(Math.max(0, level - 1) * CONFIG.ref.weaponPerLevel));
 }
-const isGoodSoldier = g => (g.kind === 'add' && g.value > 0) || (g.kind === 'mult' && CONFIG.multLadder[g.idx] > 0);
 
-export function genGateRow(rng, lanes, level, friendly, endless = false) {
-  const scale = gateScale(level, endless);
-  if (friendly) { // opening row: every lane a green +n (no ×: a ×2 on 5 soldiers is a trap)
-    const gates = [];
-    for (let i = 0; i < lanes; i++) {
-      const v = Math.max(1, Math.round(rng.range(D.addGood[0], D.addGood[1]) * scale * G.firstRowBoost));
-      gates.push({ kind: 'add', value: v, cap: Math.max(v, Math.round(CONFIG.gates.addCapPerScale * scale)) });
-    }
+// ── gate rows (specs are RELATIVE; gates.resolveGateSpec sizes them on the live crowd) ─────────
+function goodGate(rng, endless) {
+  if (rng.chance(D.multGoodChance * (endless ? CONFIG.endless.multChance : 1))) {
+    return { kind: 'mult', idx: ladderIndex(rng.chance(D.mult3Chance) ? 3 : 2) };
+  }
+  return { kind: 'add', sign: 1, rel: rng.range(GT.goodRel[0], GT.goodRel[1]), min: rng.int(GT.goodMin[0], GT.goodMin[1]) };
+}
+function badGate(rng, level) {
+  if (rng.chance(Math.min(D.multBadMax, D.multBadChance + D.multBadPerLevel * Math.max(0, level - 1)))) return { kind: 'mult', idx: ladderIndex(rng.chance(D.div3Chance) ? -3 : -2) };
+  return { kind: 'add', sign: -1, rel: rng.range(GT.badRel[0], GT.badRel[1]) };
+}
+export const isGoodSoldierSpec = g => (g.kind === 'add' && g.sign > 0) || (g.kind === 'mult' && CONFIG.multLadder[g.idx] > 0);
+
+export function genGateRow(rng, lanes, level, friendly, endless = false, gentle = false) {
+  const gates = [];
+  if (friendly) { // opening row: every lane a green +n (with 1 soldier it reads +1, +2, +3)
+    for (let i = 0; i < lanes; i++) gates.push({ kind: 'add', sign: 1, rel: rng.range(0.4, 0.8), min: rng.int(1, 3) });
     return gates;
   }
   const rareLane = rng.chance(D.rareChance) ? rng.int(0, lanes - 1) : -1;
-  const bad = badChance(level);
-  const gates = [];
+  const bad = badChance(level) * (gentle ? G.gentleBad[Math.min(1, Math.floor(level) - 1)] : 1);
   for (let i = 0; i < lanes; i++) {
     if (i === rareLane) gates.push({ kind: rng.weighted(D.rareWeights) });
-    else gates.push(rng.chance(bad) ? badGate(rng, scale) : goodGate(rng, scale, endless));
+    else if (rng.chance(bad)) gates.push(gentle ? { kind: 'add', sign: -1, rel: rng.range(GT.badRel[0], GT.badRel[1]) } : badGate(rng, level));
+    else gates.push(goodGate(rng, endless));
   }
   // a row always offers at least one green soldier gate
-  if (!gates.some(isGoodSoldier)) {
-    const lanesSoldier = [];
-    for (let i = 0; i < lanes; i++) if (i !== rareLane) lanesSoldier.push(i);
-    gates[rng.pick(lanesSoldier)] = goodGate(rng, scale, endless);
+  if (!gates.some(isGoodSoldierSpec)) {
+    const soldierLanes = [];
+    for (let i = 0; i < lanes; i++) if (i !== rareLane) soldierLanes.push(i);
+    gates[rng.pick(soldierLanes)] = goodGate(rng, endless);
   }
   return gates;
 }
 
-// ── zombie groups ────────────────────────────────────────────────────────────
-function placeRows(rng, out, count, level, hpBase, at0, dir, ease, xBias) {
+/** Make sure some gate row in (from, to] offers a WEAPON gate (keeps one green soldier gate). */
+function ensureWeaponGate(rng, items, from, to) {
+  const rows = items.filter(it => it.t === 'g' && it.at > from && it.at <= to);
+  if (!rows.length || rows.some(r => r.gates.some(g => g.kind === 'weapon'))) return;
+  const row = rng.pick(rows);
+  const goodLanes = row.gates.map((g, i) => (isGoodSoldierSpec(g) ? i : -1)).filter(i => i >= 0);
+  const score = i => {
+    const g = row.gates[i];
+    if (goodLanes.length === 1 && goodLanes[0] === i) return -1;   // never remove the only green
+    return g.kind !== 'add' && g.kind !== 'mult' ? 3 : !isGoodSoldierSpec(g) ? 2 : 1;
+  };
+  let best = -1, bestS = -1;
+  for (let i = 0; i < row.gates.length; i++) { const s = score(i) + rng.next() * 0.5; if (s > bestS) { bestS = s; best = i; } }
+  row.gates[best] = { kind: 'weapon' };
+}
+
+// ── zombies, vehicles, allies ────────────────────────────────────────────────
+function laneCenters(lanes) {
+  const { left, right } = CONFIG.road, w = (right - left) / lanes, c = [];
+  for (let i = 0; i < lanes; i++) c.push(left + w * (i + 0.5));
+  return c;
+}
+
+/** gentleBefore: track position before which only the gentle mix is used (level openings). */
+function placeRows(rng, out, count, level, hpBase, at0, dir, ease, xBias, gentleBefore) {
   const mix = zombieMix(level);
   const { left, right } = CONFIG.road;
   let placed = 0, row = 0;
@@ -78,7 +117,7 @@ function placeRows(rng, out, count, level, hpBase, at0, dir, ease, xBias) {
     const k = Math.min(count - placed, rng.int(G.zombiesPerRow[0], G.zombiesPerRow[1]));
     const at = at0 + dir * row * G.zombieRowGap + rng.range(-8, 8);
     for (let j = 0; j < k; j++) {
-      const type = rng.weighted(mix);
+      const type = rng.weighted(at < gentleBefore ? G.gentleMix : mix);
       const t = CONFIG.zombieTypes[type];
       let x;
       if (xBias && rng.chance(0.6)) x = rng.pick(xBias) + rng.range(-40, 40);
@@ -91,25 +130,34 @@ function placeRows(rng, out, count, level, hpBase, at0, dir, ease, xBias) {
   }
 }
 
-function laneCenters(lanes) {
-  const { left, right } = CONFIG.road, w = (right - left) / lanes, c = [];
-  for (let i = 0; i < lanes; i++) c.push(left + w * (i + 0.5));
-  return c;
+function placeVehicle(rng, out, level, lanes, hpBase, at, ease) {
+  if (level < G.vehicleFrom || !rng.chance(G.vehicleChance)) return;
+  const type = level >= G.carFrom && rng.chance(0.5) ? 'car' : 'bus';
+  const x = rng.pick(laneCenters(lanes));
+  out.push({ t: 'v', at, type, x, hp: hpBase * CONFIG.vehicles[type].hpMult * ease });
+}
+
+function placeAlly(rng, out, lanes, at) {
+  if (!rng.chance(G.allyChance)) return;
+  out.push({ t: 'a', at, type: rng.chance(0.55) ? 'tank' : 'truck', x: rng.pick(laneCenters(lanes)) });
 }
 
 /** Emit one block (gates | wave | mixed) at track position `at` into `items`. */
-function emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, friendly, sizeMult, endless = false) {
+function emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, friendly, sizeMult, endless = false, gentleBefore = 0) {
+  const gentle = at < gentleBefore;
   if (kind === 'gates' || kind === 'mixed') {
-    const gates = genGateRow(rng, lanes, level, friendly, endless);
+    const gates = genGateRow(rng, lanes, level, friendly, endless, gentle);
     items.push({ t: 'g', at, lanes, gates });
+    if (!friendly) placeAlly(rng, items, lanes, at + 250);
     if (kind === 'mixed') {
       const n = Math.max(2, Math.round(waveSize(level) * 0.6 * sizeMult * rng.range(0.85, 1.15) * ease));
       const front = rng.range(G.mixedFrontGap[0], G.mixedFrontGap[1]);
-      placeRows(rng, items, n, level, hpBase, at - front, -1, ease, laneCenters(lanes));
+      placeRows(rng, items, n, level, hpBase, at - front, -1, ease, laneCenters(lanes), gentleBefore);
     }
   } else {
     const n = Math.max(2, Math.round(waveSize(level) * sizeMult * rng.range(0.85, 1.15) * ease));
-    placeRows(rng, items, n, level, hpBase, at, +1, ease, null);
+    placeRows(rng, items, n, level, hpBase, at, +1, ease, null, gentleBefore);
+    placeVehicle(rng, items, level, lanes, hpBase, at + 140, ease);
   }
 }
 
@@ -145,7 +193,7 @@ export function buildLevel(level, seed, ease = 1) {
     if (at + gap > G.levelLength - G.minGap) break;
     at += gap;
     const kind = pickKind(rng, prev, prev2);
-    emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, false, ramp(at));
+    emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, false, ramp(at), false, G.levelLength * G.gentleUntil);
     blocks.push({ kind, at });
     prev2 = prev; prev = kind;
   }
@@ -153,11 +201,13 @@ export function buildLevel(level, seed, ease = 1) {
   at = Math.max(at + G.minGap, G.levelLength - G.minGap * 0.6);
   emitBlock(rng, items, 'gates', at, level, lanes, hpBase, ease, false, 1);
   blocks.push({ kind: 'gates', at });
+  ensureWeaponGate(rng, items, G.firstBlockAt, G.levelLength * G.weaponGateBy);
   items.sort((a, b) => a.at - b.at);
   const length = at + G.minGap;
   return {
     mode: 'campaign', level, seed, ease, lanes, length, items, blocks,
-    boss: { hp: hpBase * CONFIG.boss.minHpMult * ease, level }, // generator.js calibrates it
+    // generator.js calibrates hp; kind/elite pick the boss archetype and its speed-up
+    boss: { hp: hpBase * CONFIG.boss.minHpMult * ease, level, kind: bossKind(level), elite: bossElite(level) },
   };
 }
 
@@ -174,7 +224,8 @@ export function buildEndlessChunk(index, startAt, runSeed) {
     const lanes = lanesFor(Math.floor(lvl));
     const hpBase = zombieHpBase(lvl, true);
     const kind = index === 0 && first ? 'gates' : pickKind(rng, prev, prev2);
-    emitBlock(rng, items, kind, at, lvl, lanes, hpBase, 1, index === 0 && first, 1, true);
+    const sizeMult = D.waveRamp[0] + (1 - D.waveRamp[0]) * Math.min(1, at / E.rampDistance);
+    emitBlock(rng, items, kind, at, lvl, lanes, hpBase, 1, index === 0 && first, sizeMult, true, E.chunkLen * 1.2);
     first = false;
     prev2 = prev; prev = kind;
     const gapShrink = Math.max(0, lvl - 1) * G.gapShrinkPerLevel;

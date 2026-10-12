@@ -135,6 +135,8 @@ export class UI {
     $('lcSurvivors').textContent = fmtNum(d.survivors);
     $('lcNextLbl').textContent = t('nextStart', { n: d.level + 1 });
     $('lcNext').textContent = fmtNum(d.nextStart);
+    $('lcWeapon').textContent = t(WEAPON_IDS[d.weapon]);
+    this.paintIcon($('lcWeaponIcon'), WEAPON_IDS[d.weapon]);
     $('lcCoins').textContent = fmtNum(d.coins);
     $('lcScore').textContent = fmtNum(d.score);
     this.show('level');
