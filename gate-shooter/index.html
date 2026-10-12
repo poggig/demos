@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b2238">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>Gate Shooter</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --frame: #1b2238; --outline: #1d2335; --ui: #fff; --uiText: #1d2335;
+    --uiPrimary: #ffb020; --uiPrimaryText: #1d2335; --uiSecondary: #2f7bff; --uiSecondaryText: #fff;
+    --uiGood: #22c55e; --uiBad: #ef4444; --uiShade: rgba(16,20,38,.62); --coin: #ffd23f; --gateRare: #ffd23f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--frame);
+    touch-action: none; overscroll-behavior: none; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  body { position: fixed; inset: 0; }
+  #frame { position: absolute; left: 0; top: 0; overflow: hidden; background: #7ed957;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.25), 0 10px 60px rgba(0,0,0,.45); }
+  #cv { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  #ui { position: absolute; left: 0; top: 0; width: 540px; height: 960px; transform-origin: 0 0; pointer-events: none; color: var(--uiText); }
+  .hidden { display: none !important; }
+
+  /* ── HUD ─────────────────────────────────────────────── */
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  .hud-row { position: absolute; left: 12px; right: 12px; top: 12px; display: flex; align-items: center; gap: 10px; }
+  .hud-row2 { position: absolute; left: 12px; right: 12px; top: 72px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; height: 48px; padding: 0 14px; border-radius: 24px;
+    background: rgba(255,255,255,.92); border: 3.5px solid var(--outline); box-shadow: 0 4px 0 rgba(29,35,53,.35);
+    font-weight: 900; font-size: 24px; color: var(--uiText); white-space: nowrap; }
+  .chip .lbl { font-size: 15px; font-weight: 800; opacity: .7; text-transform: uppercase; letter-spacing: .5px; }
+  .chip.small { height: 38px; font-size: 19px; padding: 0 11px; border-width: 3px; }
+  .chip canvas { width: 30px; height: 30px; }
+  .chip.small canvas { width: 26px; height: 26px; }
+  .hud-row { gap: 8px; }
+  .hud-row > * { flex: 0 0 auto; }
+  .hud-row .chip { padding: 0 12px; gap: 6px; }
+  .hud-row .push { margin-left: auto; }
+  .chip .lbl:empty { display: none; }
+  .hud-row.tight .lbl { display: none; }
+  .hud-row .chip.stack { flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; line-height: 1; }
+  .chip .cap { font-size: 11px; font-weight: 900; letter-spacing: .8px; text-transform: uppercase; color: var(--uiSecondary); }
+  .chip .val { display: inline-flex; align-items: baseline; gap: 6px; }
+  .icon-btn { pointer-events: auto; width: 52px; height: 52px; border-radius: 16px; border: 3.5px solid var(--outline);
+    background: var(--ui); box-shadow: 0 5px 0 var(--outline); display: inline-flex; align-items: center; justify-content: center;
+    gap: 7px; padding: 0; cursor: pointer; }
+  .icon-btn span { width: 8px; height: 22px; border-radius: 3px; background: var(--outline); }
+  .icon-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--outline); }
+
+  /* ── screens ─────────────────────────────────────────── */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 30px; background: var(--uiShade); pointer-events: auto; text-align: center; }
+  .screen.menu { background: linear-gradient(rgba(16,20,38,.35), rgba(16,20,38,.55)); gap: 14px; }
+  .title { margin: 0; font-size: 70px; line-height: .95; font-weight: 900; color: #fff; letter-spacing: 1px;
+    -webkit-text-stroke: 11px var(--outline); paint-order: stroke fill; text-shadow: 0 8px 0 var(--outline); max-width: 500px; }
+  .subtitle { margin: 0 0 6px; color: #fff; font-weight: 800; font-size: 21px; -webkit-text-stroke: 5px var(--outline); paint-order: stroke fill; max-width: 480px; }
+  h2 { margin: 0 0 6px; font-size: 44px; font-weight: 900; color: #fff; -webkit-text-stroke: 9px var(--outline); paint-order: stroke fill; line-height: 1.05; }
+  .panel { background: var(--ui); border: 4px solid var(--outline); border-radius: 28px; box-shadow: 0 9px 0 rgba(0,0,0,.28);
+    padding: 22px 24px; width: 460px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .panel h2 { color: var(--uiText); -webkit-text-stroke: 0; }
+  .btn { pointer-events: auto; font: inherit; font-weight: 900; font-size: 30px; min-width: 320px; padding: 15px 28px;
+    border-radius: 24px; border: 4px solid var(--outline); background: var(--uiPrimary); color: var(--uiPrimaryText);
+    box-shadow: 0 7px 0 var(--outline); cursor: pointer; text-transform: uppercase; letter-spacing: .5px; }
+  .btn:active { transform: translateY(5px); box-shadow: 0 2px 0 var(--outline); }
+  .btn.secondary { background: var(--uiSecondary); color: var(--uiSecondaryText); }
+  .btn.tertiary { background: var(--ui); color: var(--uiText); font-size: 25px; padding: 12px 24px; }
+  .btn:disabled { filter: grayscale(.85) brightness(.9); opacity: .75; }
+  .rows { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 23px; padding: 6px 4px; border-bottom: 2px dashed rgba(29,35,53,.15); }
+  .row:last-child { border-bottom: 0; }
+  .row b { font-size: 26px; font-weight: 900; display: inline-flex; align-items: center; gap: 6px; }
+  .row b canvas { width: 24px; height: 24px; }
+  .records { width: 400px; padding: 12px 18px; gap: 4px; }
+  .records h3 { margin: 0; font-size: 19px; font-weight: 900; text-transform: uppercase; opacity: .7; }
+  .records .row { font-size: 19px; padding: 3px 2px; }
+  .records .row b { font-size: 21px; }
+  .settings { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .toggle, .seg button { pointer-events: auto; font: inherit; font-weight: 900; font-size: 19px; height: 50px; padding: 0 14px;
+    border-radius: 16px; border: 3.5px solid var(--outline); background: var(--ui); color: var(--uiText); box-shadow: 0 5px 0 var(--outline); cursor: pointer; }
+  .toggle b { margin-left: 6px; color: var(--uiGood); }
+  .toggle.off b { color: var(--uiBad); }
+  .toggle:active, .seg button:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--outline); }
+  .seg { display: inline-flex; gap: 6px; }
+  .seg button.on { background: var(--uiSecondary); color: #fff; }
+  .howto { margin: 0; color: #fff; font-weight: 800; font-size: 17px; line-height: 1.3; max-width: 470px; -webkit-text-stroke: 4px var(--outline); paint-order: stroke fill; }
+  .newrec { font-weight: 900; font-size: 26px; color: var(--uiText); background: var(--gateRare); border: 3.5px solid var(--outline);
+    border-radius: 18px; padding: 6px 16px; transform: rotate(-3deg); box-shadow: 0 5px 0 var(--outline); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: rotate(-3deg) scale(1.07); } }
+  #scrDedication .panel { width: 490px; padding: 24px 18px; }
+  .ded-body { white-space: pre-line; font-size: 21px; font-weight: 700; line-height: 1.45; margin: 0; }
+  .ded-sig { margin: 0; font-size: 21px; font-weight: 800; opacity: .7; }
+
+  /* shop */
+  .cards { display: flex; flex-direction: column; gap: 12px; width: 470px; }
+  .card { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 12px; background: var(--ui);
+    border: 4px solid var(--outline); border-radius: 22px; padding: 12px 14px; box-shadow: 0 6px 0 rgba(0,0,0,.25); text-align: left; }
+  .card canvas { width: 62px; height: 62px; }
+  .card .name { font-size: 25px; font-weight: 900; }
+  .card .lv { font-size: 17px; font-weight: 800; opacity: .65; margin-left: 6px; }
+  .card .desc { font-size: 18px; font-weight: 700; opacity: .8; }
+  .card .buy { min-width: 128px; font-size: 22px; padding: 10px 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 18px; text-transform: none; }
+  .card .buy canvas { width: 24px; height: 24px; }
+  .buy.flash { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+  /* rotate overlay */
+  #rotate { position: fixed; inset: 0; z-index: 10; background: var(--frame); color: #fff; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 24px; font-weight: 900; font-size: 22px; text-align: center; padding: 24px; }
+  #rotate .phone { width: 64px; height: 110px; border: 6px solid #fff; border-radius: 14px; animation: rot 1.8s ease-in-out infinite; }
+  @keyframes rot { 0%, 30% { transform: rotate(-90deg); } 60%, 100% { transform: rotate(0); } }
+  #fps { position: absolute; right: 8px; bottom: 8px; font: 700 16px monospace; color: #fff; background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="frame">
+  <canvas id="cv"></canvas>
+  <div id="ui">
+    <div id="hud" class="hidden">
+      <div class="hud-row">
+        <button class="icon-btn" id="btnPause" aria-label="Pause"><span></span><span></span></button>
+        <div class="chip stack"><span class="cap" id="hudMode"></span><span class="val"><span class="lbl" id="hudModeLbl"></span><b id="hudModeVal">1</b></span></div>
+        <div class="chip push"><span class="lbl" data-t="score"></span><b id="hudScore">0</b></div>
+        <div class="chip"><canvas data-icon="coin"></canvas><b id="hudCoins">0</b></div>
+      </div>
+      <div class="hud-row2">
+        <div class="chip small"><canvas data-icon="soldier"></canvas><b id="hudSoldiers">0</b></div>
+        <div class="chip small"><canvas id="hudWeaponIcon" data-icon="rifle"></canvas><b id="hudWeapon"></b></div>
+        <div class="chip small" id="hudRateChip"><canvas data-icon="rate"></canvas><b id="hudRate"></b></div>
+        <div class="chip small" id="hudDamageChip"><canvas data-icon="damage"></canvas><b id="hudDamage"></b></div>
+      </div>
+    </div>
+
+    <section id="scrMenu" class="screen menu hidden">
+      <h1 class="title" data-t="title"></h1>
+      <p class="subtitle" data-t="subtitle"></p>
+      <div class="chip"><canvas data-icon="coin"></canvas><b id="menuCoins">0</b></div>
+      <button class="btn" id="btnCampaign" data-t="campaign"></button>
+      <button class="btn secondary" id="btnEndless" data-t="endless"></button>
+      <button class="btn tertiary" id="btnShopMenu" data-t="shop"></button>
+      <div class="panel records">
+        <h3 data-t="records"></h3>
+        <div class="rows">
+          <div class="row"><span><span data-t="campaign"></span> · <span data-t="bestLevel"></span></span><b id="recLevel">0</b></div>
+          <div class="row"><span><span data-t="campaign"></span> · <span data-t="bestScore"></span></span><b id="recCScore">0</b></div>
+          <div class="row"><span><span data-t="endless"></span> · <span data-t="bestScore"></span></span><b id="recEScore">0</b></div>
+          <div class="row"><span><span data-t="endless"></span> · <span data-t="bestDistance"></span></span><b id="recEDist">0</b></div>
+        </div>
+      </div>
+      <div class="settings">
+        <div class="seg"><button id="btnLangIt">IT</button><button id="btnLangEn">EN</button></div>
+        <button class="toggle" data-toggle="music"><span data-t="music"></span><b></b></button>
+        <button class="toggle" data-toggle="sfx"><span data-t="sfx"></span><b></b></button>
+      </div>
+      <p class="howto" data-t="howTo"></p>
+    </section>
+
+    <section id="scrPause" class="screen hidden">
+      <div class="panel">
+        <h2 data-t="paused"></h2>
+        <button class="btn" id="btnResume" data-t="resume"></button>
+        <button class="btn secondary" id="btnPauseRestart" data-t="restart"></button>
+        <button class="btn tertiary" id="btnPauseMenu" data-t="menu"></button>
+        <div class="settings">
+          <button class="toggle" data-toggle="music"><span data-t="music"></span><b></b></button>
+          <button class="toggle" data-toggle="sfx"><span data-t="sfx"></span><b></b></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="scrLevel" class="screen hidden">
+      <h2 id="lcTitle"></h2>
+      <div class="panel">
+        <div class="rows">
+          <div class="row"><span data-t="survivors"></span><b id="lcSurvivors">0</b></div>
+          <div class="row"><span id="lcNextLbl"></span><b id="lcNext">0</b></div>
+          <div class="row"><span data-t="coinsEarned"></span><b><canvas data-icon="coin"></canvas><span id="lcCoins">0</span></b></div>
+          <div class="row"><span data-t="score"></span><b id="lcScore">0</b></div>
+        </div>
+      </div>
+      <button class="btn" id="btnLevelContinue" data-t="continue"></button>
+    </section>
+
+    <section id="scrDedication" class="screen hidden">
+      <div class="panel">
+        <h2 id="dedTitle"></h2>
+        <p class="ded-body" id="dedBody"></p>
+        <p class="ded-sig" id="dedSig"></p>
+      </div>
+      <button class="btn" id="btnDedContinue" data-t="continue"></button>
+    </section>
+
+    <section id="scrShop" class="screen hidden">
+      <h2 data-t="shopTitle"></h2>
+      <div class="chip"><canvas data-icon="coin"></canvas><b id="shopCoins">0</b></div>
+      <div class="cards">
+        <div class="card"><canvas data-icon="soldier"></canvas><div><div class="name"><span data-t="upStart"></span><span class="lv" id="lvStart"></span></div><div class="desc" id="descStart"></div></div><button class="btn buy" id="buyStart" data-up="start"></button></div>
+        <div class="card"><canvas data-icon="damage"></canvas><div><div class="name"><span data-t="upDamage"></span><span class="lv" id="lvDamage"></span></div><div class="desc" id="descDamage"></div></div><button class="btn buy" id="buyDamage" data-up="damage"></button></div>
+        <div class="card"><canvas data-icon="rate"></canvas><div><div class="name"><span data-t="upRate"></span><span class="lv" id="lvRate"></span></div><div class="desc" id="descRate"></div></div><button class="btn buy" id="buyRate" data-up="rate"></button></div>
+      </div>
+      <button class="btn" id="btnShopNext"></button>
+      <button class="btn tertiary" id="btnShopBack" data-t="back"></button>
+    </section>
+
+    <section id="scrOver" class="screen hidden">
+      <h2 data-t="gameOver"></h2>
+      <div class="newrec hidden" id="overNewRec" data-t="newRecord"></div>
+      <div class="panel">
+        <div class="rows">
+          <div class="row"><span data-t="score"></span><b id="overScore">0</b></div>
+          <div class="row"><span data-t="record"></span><b id="overRecord">0</b></div>
+          <div class="row"><span id="overReachLbl"></span><b id="overReach">0</b></div>
+          <div class="row"><span data-t="coinsEarned"></span><b><canvas data-icon="coin"></canvas><span id="overCoins">0</span></b></div>
+        </div>
+      </div>
+      <button class="btn" id="btnRestart" data-t="restart"></button>
+      <button class="btn tertiary" id="btnOverMenu" data-t="menu"></button>
+    </section>
+  </div>
+</div>
+<div id="rotate" class="hidden"><div class="phone"></div><div data-t="rotate"></div></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
