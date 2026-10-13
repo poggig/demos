@@ -5,7 +5,7 @@
 // Personalizable CONTENT (texts, names, colours, dedication) lives in theme.js, not here.
 
 export const CONFIG = {
-  version: '1.1.0',
+  version: '1.2.0',
 
   // ── View & loop ────────────────────────────────────────────────────────────
   view: { w: 540, h: 960, dprCap: 2 },
@@ -61,15 +61,15 @@ export const CONFIG = {
   gates: {
     h: 104,                   // gate panel height
     pad: 7,                   // gap between neighbouring panels
-    goodRel: [0.3, 0.75],     // green +n = crowd × rel …
+    goodRel: [0.25, 0.6],     // green +n = crowd × rel …
     goodMin: [1, 3],          // … at least this (so 1 soldier still gets +1..+3) …
-    addCap: 10,               // … at most addCap × gateScale(level)
-    badRel: [0.3, 0.55],      // red −n = crowd × rel (at least 1) …
-    badCap: 40,               // … at most badCap × gateScale(level)
-    multGainCap: 12,          // a green ×n only shows while it adds ≤ multGainCap × gateScale soldiers;
+    addCap: 8,                // … at most addCap × gateScale(level)
+    badRel: [0.35, 0.65],     // red −n = crowd × rel (at least 1) …
+    badCap: 60,               // … at most badCap × gateScale(level)
+    multGainCap: 8,           // a green ×n only shows while it adds ≤ multGainCap × gateScale soldiers;
                               // above that it becomes the best +n (no runaway ×2 → ×3 → ×2 snowball)
     repairGood: 1.2,          // shooting a green +n can raise it up to ×1.2 (at least +1)
-    repairBad: 0.5,           // shooting a red −n can raise it up to +|n|×0.5 (a −6 becomes at best +3)
+    repairBad: 0.25,          // shooting a red −n can raise it up to +|n|×0.25 (a −8 becomes at best +2)
     rare: {
       rateValue: 0.25,        // "+fire rate" gate: +25 % fire rate (until the end of the level)
       damageValue: 1.5,       // "×damage" gate: damage ×1.5 (until the end of the level)
@@ -86,7 +86,7 @@ export const CONFIG = {
   // ── Zombies ────────────────────────────────────────────────────────────────
   // hp = hpMult × zombieHp(level); speed = own walking speed on top of the scroll.
   // weight = minimum soldiers killed on contact; home = sideways homing px/s.
-  hpPerSoldier: 2.5,          // contact kills max(weight, ceil(hpLeft / hpPerSoldier))
+  hpPerSoldier: 2.0,          // contact kills max(weight, ceil(hpLeft / hpPerSoldier))
   zombieTypes: {
     walker:   { hpMult: 1.0, speed: 30, r: 17, weight: 1, coins: 1, score: 10, home: 38 },
     runner:   { hpMult: 0.55, speed: 95, r: 14, weight: 1, coins: 1, score: 15, home: 70,
@@ -124,7 +124,7 @@ export const CONFIG = {
     // Boss hp is CALIBRATED by the generator: the damage the reference player really deals until
     // the boss has covered targetProgress of its walk (so fast or charging bosses are fair too),
     // floored at minHpMult × zombieHp(level). Then re-validated (sim.bossMaxProgress).
-    targetProgress: 0.7,
+    targetProgress: 0.8,
     introTargetProgress: [0.3, 0.45, 0.6], // gentler bosses on levels 1, 2, 3
     minHpMult: 12,
     enterSpeed: 150,          // px/s: quick entrance down to enterY (clear of the HUD) …
@@ -142,7 +142,8 @@ export const CONFIG = {
     eliteCooldown: 0.85,      // special-move cooldowns ×0.85 per completed cycle
     king:    { every: 3.4, summon: 3, type: 'walker' },                 // summons the horde
     butcher: { every: 4.2, telegraph: 0.8, dist: 130, time: 0.35 },     // telegraphed charge
-    acid:    { every: 2.5, globs: 3, gap: 0.28, speed: 300, dmgMult: 2.5 }, // aimed acid stream: globs 'gap' s apart
+    acid:    { every: 2.5, globs: 3, gap: 0.28, speed: 300, killFrac: 0.06, killMin: 2 }, // aimed acid stream: globs 'gap' s apart,
+                                                                        // each kills 6 % of the crowd (≥ 2)
     tank:    { every: 5, shield: 2, reduce: 0.1 },                      // armour-up phases
     blob:    { splitAt: 0.5, splitOffset: 55 },                                          // splits in two at 50 %
     necro:   { every: 3.8, summon: 4, type: 'mini' },                   // raises the dead
@@ -153,21 +154,23 @@ export const CONFIG = {
   // ── Difficulty curves (campaign: level; endless: equivalent level) ─────────
   difficulty: {
     hpBase: 3,                // walker hp on level 1
-    hpGrowth: 1.14,           // zombieHp(level) = hpBase × hpGrowth^(level−1) …
-    introHpMult: [0.65, 0.85],// … × this on levels 1 and 2 (a tutorial for a crowd of 1–5)
+    hpGrowth: 1.2,            // zombieHp(level) = hpBase × hpGrowth^(level−1) …
+    introHpMult: [0.31, 0.75],// … × this on levels 1 and 2 (a tutorial for a crowd of 1–5)
+    hpRamp: [0.9, 2.0],       // … × this from the start to the end of a level's road (campaign):
+                              //     the horde toughens as the crowd grows through the level
     gateGrowth: 1.13,         // gate caps scale by gateGrowth^(level−1)
-    waveBase: 8,              // zombies per wave on level 1
-    wavePerLevel: 1.0,        //   … + this per level
-    waveMax: 34,
+    waveBase: 10,             // zombies per wave on level 1
+    wavePerLevel: 1.5,        //   … + this per level
+    waveMax: 46,
     waveRamp: [0.35, 1.35],   // inside a level, waves grow from 35 % to 135 % of that size
-    badChanceBase: 0.25,      // chance a non-rare lane holds a red gate
+    badChanceBase: 0.32,      // chance a non-rare lane holds a red gate
     badChancePerLevel: 0.04,
-    badChanceMax: 0.6,
+    badChanceMax: 0.65,
     multGoodChance: 0.12,     // a green gate is ×n (else +n) …
     mult3Chance: 0.2,         // … and that ×n is a ×3 (else ×2)
-    multBadChance: 0.12,      // a red gate is ÷n (else −n) …
+    multBadChance: 0.15,      // a red gate is ÷n (else −n) …
     multBadPerLevel: 0.03,    //   … more often on later levels …
-    multBadMax: 0.35,
+    multBadMax: 0.4,
     div3Chance: 0.3,          // … and that ÷n is a ÷3 (else ÷2)
     rareChance: 0.3,          // chance a gate row carries one special gate
     rareWeights: { weapon: 1, rate: 2, damage: 2, airstrike: 1.5, heli: 1.5 },
@@ -184,8 +187,9 @@ export const CONFIG = {
 
   // ── Level generator ────────────────────────────────────────────────────────
   gen: {
-    levelLength: 6600,        // px of road before the boss (~44 s) → ~55 s with the boss
-    firstBlockAt: 380,
+    levelLength: 6250,        // px of road before the boss (~42 s) → ~50–60 s with the boss
+    firstBlockAt: 380,        // the opening gate row is on screen from the start …
+    hostileEnterMargin: 60,   // … but every zombie / vehicle enters from the top (≥ this beyond the spawn line)
     blockGap: [520, 680],     // distance between blocks
     gapShrinkPerLevel: 5,     // blocks get closer as levels rise …
     minGap: 440,              // … down to this
@@ -197,6 +201,7 @@ export const CONFIG = {
     gentleUntil: 0.3,         // the first 30 % of a level (the crowd was just cut to 25 %) …
     gentleMix: { walker: 8, runner: 2 }, // … only sends basic zombies, and its red gates are
     gentleBad: [0, 0.5],      // … ×0 on level 1 and ×0.5 later (never ÷): a crowd of 1–3 must not be wiped
+    tutorialWaveHp: 1.0,      // level 1's FIRST wave: zombie hp capped here (1 = one rifle bullet)
     vehicleFrom: 2,           // enemy vehicles from level 2 …
     vehicleChance: 0.3,       // … in this share of wave / mixed blocks
     carFrom: 4,               // cars (fast, swerving) from level 4; buses before
@@ -207,20 +212,24 @@ export const CONFIG = {
   },
 
   // ── Winnability simulator ──────────────────────────────────────────────────
-  // The "reasonable path": best gate per row, no gate aiming; it hunts threats, side-steps
-  // vehicles and (imperfectly — pessimistic) acid and boulders.
-  // It enters level L with the REFERENCE state a reasonable player brings from levels 1..L−1
-  // (25 % carry-over + the weapons collected); tests prove a chained run really reaches it.
+  // The "reasonable path": best gate per row (its bullets improve the gate in front, as in the
+  // game), no gate aiming; it hunts threats, side-steps vehicles and (imperfectly — pessimistic)
+  // acid and boulders. It enters level L with the REFERENCE state ≈ 80 % of what a careful player
+  // brings from levels 1..L−1 (25 % carry-over + kept weapon + shop) — tests prove the median
+  // careful run really brings it — and the boss is sized so that this player only just wins:
+  // a careful player usually wins, a sloppy one meets the boss with too little and is crushed.
   sim: {
     maxSeconds: 150,          // safety stop
-    bossMaxProgress: 0.85,    // boss must die before covering 85 % of its walk (12 s ≈ 72 %)
+    bossMaxProgress: 0.9,     // the reference player must kill the boss before it covers 90 % of its walk
     bonusValue: 0.45,         // air strike / helicopter gate valued as +45 % firepower
     weaponValue: 0.6,         // a weapon gate is worth +60 % on top of its DPS gain (it is KEPT for the run)
+    repairGates: true,        // the reference crowd's bullets improve the gate in front of it (as in the game)
   },
   ref: {
-    start: [1, 3, 7, 10, 12, 14, 16, 18, 22, 26], // reference starting crowd on levels 1..10 …
-    startGrowth: 1.15,        // … then ×1.15 per level (≈ half of what a careful chained run brings)
+    start: [1, 4, 8, 12, 16, 20, 24, 26, 32, 35], // reference starting crowd on levels 1..10 …
+    startGrowth: 1.12,        // … then ×1.12 per level (≈ 60–80 % of the median careful chained run)
     weaponPerLevel: 0.9,      // reference weapon = floor((L−1) × 0.9), capped at the last weapon
+    shopPerLevel: 0.5,        // reference shop: floor((L−1) × 0.5) levels of damage AND of fire rate
   },
 
   // ── Campaign / endless ─────────────────────────────────────────────────────
@@ -251,6 +260,7 @@ export const CONFIG = {
     smoothing: 16,            // exponential smoothing rate toward the target x
     keySpeed: 520,            // px/s with ←/→ or A/D
     touchSensitivity: 1.15,   // relative drag gain
+    mouseHudBand: 130,        // logical px from the top: the mouse doesn't steer up in the HUD (pause button)
   },
 
   // ── Feel ───────────────────────────────────────────────────────────────────

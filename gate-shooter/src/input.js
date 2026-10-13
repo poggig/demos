@@ -48,10 +48,17 @@ export class Input {
     return (clientX - r.left) / this.getScale();
   }
 
+  /** Mouse over the HUD band or a button (e.g. reaching for pause): don't steer the crowd. */
+  mouseOffRoad(e) {
+    if (e.target.closest && e.target.closest('button')) return true;
+    const r = this.frame.getBoundingClientRect();
+    return (e.clientY - r.top) / this.getScale() < I.mouseHudBand;
+  }
+
   down(e) {
     if (!this.active || !this.world) return;
     if (e.target.closest && e.target.closest('button')) return;
-    if (e.pointerType === 'mouse') { this.world.setTargetX(this.logicalX(e.clientX)); return; }
+    if (e.pointerType === 'mouse') { if (!this.mouseOffRoad(e)) this.world.setTargetX(this.logicalX(e.clientX)); return; }
     this.dragId = e.pointerId;
     this.dragX0 = e.clientX;
     this.target0 = this.world.targetX;
@@ -62,6 +69,7 @@ export class Input {
     if (!this.active || !this.world) return;
     if (e.pointerType === 'mouse') {
       if (this.lastMouseX !== null && Math.abs(e.clientX - this.lastMouseX) < 0.5) return;
+      if (this.mouseOffRoad(e)) return;
       this.lastMouseX = e.clientX;
       this.world.setTargetX(this.logicalX(e.clientX));
       return;

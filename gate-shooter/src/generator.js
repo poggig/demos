@@ -53,9 +53,10 @@ function finish(def, res, attempts, validated) {
 
 /**
  * A whole campaign played by an autopilot, level after level, with the real carry-over rules
- * (25 % of survivors, weapon kept). aiMistake = chance of picking a random gate; gateUpgrades =
- * it shoots the gate it waits under; shop = after each level it spends its coins on the cheapest
- * upgrade, again and again. Returns { reached, levels: [{level, start, weapon, survivors, won}] }.
+ * (25 % of survivors, weapon kept). aiMistake = chance of a late swerve into a random gate;
+ * aiStyle 'worst' | 'static' = a player trying to lose / never moving; gateUpgrades = its bullets
+ * improve the gate in front of it; shop = after each level it spends its coins on the cheapest
+ * upgrade, again and again. Returns { reached, levels: [{level, start, weapon, upgrades, survivors, won}] }.
  */
 export function simulateCampaign(runSeed, opts = {}) {
   const maxLevel = opts.maxLevel || 30;
@@ -67,7 +68,7 @@ export function simulateCampaign(runSeed, opts = {}) {
     const start = L === 1 ? st.start : carryOverStart(survivors, st.start);
     const def = generateLevel(L, runSeed);
     const r = simulateLevel(def, { start, weapon, rateMult: st.rateMult, damageMult: st.damageMult,
-      aiMistake: opts.aiMistake || 0, aiSeed: hashSeed('mistakes', runSeed, L), gateUpgrades: !!opts.gateUpgrades, aiDodge: opts.aiDodge });
+      aiStyle: opts.aiStyle, aiMistake: opts.aiMistake || 0, aiSeed: hashSeed('mistakes', runSeed, L), gateUpgrades: !!opts.gateUpgrades, aiDodge: opts.aiDodge });
     levels.push({ level: L, start, weapon, survivors: r.soldiers, won: r.won, time: r.time, upgrades: { ...upg } });
     if (!r.won) return { reached: L, levels };
     survivors = r.soldiers; weapon = r.weapon; coins += r.coins;

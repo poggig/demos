@@ -21,6 +21,7 @@ export class World {
    * opt: { mode: 'campaign'|'endless', def (campaign level def), seed (endless run seed),
    *        start, weapon, rateMult, damageMult,
    *        ai (autopilot), aiMistake (0..1: chance to pick a random gate), aiDodge (default true),
+   *        aiStyle ('best' | 'worst': takes the weakest gate, never hunts or dodges | 'static': never moves),
    *        gateUpgrades (default true), quiet (no events — simulator) }
    */
   constructor(opt) {
@@ -31,7 +32,8 @@ export class World {
     this.level = this.endless ? 1 : this.def.level;
     this.ai = !!opt.ai;
     this.aiMistake = opt.aiMistake || 0;
-    this.aiDodge = opt.aiDodge !== false;
+    this.aiStyle = opt.aiStyle || 'best';
+    this.aiDodge = opt.aiDodge !== false && this.aiStyle === 'best';
     this.aiRng = new Rng(hashSeed('ai', this.mode, this.level, this.seed, opt.aiSeed || 0));
     this.quiet = !!opt.quiet;
     this.gateUpgrades = opt.gateUpgrades !== false;
@@ -79,7 +81,7 @@ export class World {
     for (let i = 0; i < C.maxZombies; i++) this.zombies[i] = this.blankZombie();
     this.nZ = 0;
     this.shots = new Array(C.maxEnemyShots);
-    for (let i = 0; i < C.maxEnemyShots; i++) this.shots[i] = { kind: 'acid', x: 0, y: 0, vx: 0, vy: 0, dmg: 0, r: 0, t: 0, tMax: 1, alive: false };
+    for (let i = 0; i < C.maxEnemyShots; i++) this.shots[i] = { kind: 'acid', x: 0, y: 0, vx: 0, vy: 0, dmg: 0, frac: 0, min: 1, r: 0, t: 0, tMax: 1, alive: false };
     this.nS = 0;
     this.rows = [];                   // live gate rows (≤ 4 at a time)
     this.allies = [];                 // allied pickups on the road
@@ -279,13 +281,15 @@ export class World {
   // ── reasonable-path autopilot (simulator; aiMistake makes it a sloppier player: with that
   //    chance it swerves into a random lane in the LAST second before a row — a human slip) ──
   autopilot() {
+    if (this.aiStyle === 'static') return;      // a player who never touches the screen
+    const worst = this.aiStyle === 'worst';  // a player TRYING to lose
     let row = null;
     for (const r of this.rows) if (!r.crossed && (!row || r.y > row.y)) row = r;
     if (row && row !== this._aiRow) {
       this._aiRow = row;
-      let best = 0, bestP = -1;
+      let best = 0, bestP = -Infinity;
       for (let i = 0; i < row.gates.length; i++) {
-        const p = powerAfter(this.stats, row.gates[i]);
+        const p = powerAfter(this.stats, row.gates[i]) * (worst ? -1 : 1);
         if (p > bestP) { bestP = p; best = i; }
       }
       this._aiLane = best;
@@ -315,22 +319,23 @@ export class World {
       }
     }
     if (this.bossPhase && this.bosses.length) tx = this.bosses[0].x;
-    else if (!row || row.y < CROWD_Y - 330) {
+    else if (!worst && (!row || row.y < CROWD_Y - 330)) {
       // between rows: grab an allied pickup on the way, else go and shoot a planted spitter/shaman …
       let ally = null;
       for (const a of this.allies) if (a.alive && a.y > 120 && a.y < CROWD_Y - 40 && (!ally || a.y > ally.y)) ally = a;
       if (ally) tx = ally.x;
       else {
         // the biggest threat on screen: planted spitters/shamans first, else the zombie that
-        // would cost the most soldiers on contact (brutes, exploders…)
+        // would cost the most soldiers on contact (brutes, exploders…; the nearest one on a tie).
+        // A small crowd chases every zombie (each one is a real loss), a big one only the heavy ones.
         let hunt = null, best = 0;
         for (let j = 0; j < this.nZ; j++) {
           const z = this.zombies[j];
           if (!z.alive || z.veh || z.y < 100 || z.y > CROWD_Y - 140) continue;
-          const threat = (z.state === 1 ? 1e9 : 0) + contactKills(z.hp, z.t.weight);
+          const threat = (z.state === 1 ? 1e9 : 0) + contactKills(z.hp, z.t.weight) + z.y / CROWD_Y;
           if (threat > best) { best = threat; hunt = z; }
         }
-        if (hunt && best >= 3) tx = hunt.x;
+        if (hunt && best >= Math.min(3, Math.max(1, this.stats.soldiers * 0.1))) tx = hunt.x;
       }
       // … and step out of the lane of an incoming vehicle
       if (this.aiDodge) {
@@ -457,7 +462,8 @@ export class World {
     return -1;
   }
 
-  /** Area damage to zombies (and bosses) — rockets, explosions, bombs, boulders. */
+  /** Area damage to zombies (and bosses) — rockets, explosions, bombs, boulders. `except` (a zombie
+   *  or a boss) is the target the projectile already hit directly: it takes no splash on top. */
   blast(x, y, radius, dmg, except, bossDmg) {
     const zs = this.zombies, r2 = radius * radius;
     for (let j = 0; j < this.nZ; j++) {
@@ -470,6 +476,7 @@ export class World {
     if (bossDmg > 0) {
       for (let k = this.bosses.length - 1; k >= 0; k--) {   // backwards: a dying boss is spliced out
         const bo = this.bosses[k];
+        if (bo === except) continue;
         const dx = bo.x - x, dy = bo.y - y, rr = radius + bo.r;
         if (dx * dx + dy * dy <= rr * rr) this.damageBoss(bo, bossDmg);
       }
@@ -507,7 +514,7 @@ export class World {
       const bo = this.bosses[k];
       const dx = bo.x - b.x, dy = (bo.y - b.y) * 1.15, rr = bo.r + b.r;
       if (dx * dx + dy * dy > rr * rr) continue;
-      if (b.splash > 0) this.splash(b.x, b.y, b.splash, b.dmg * b.splashF, null);
+      if (b.splash > 0) this.splash(b.x, b.y, b.splash, b.dmg * b.splashF, bo); // the escort / the other blob half
       this.damageBoss(bo, b.dmg);
       this.emitMinor('bosshit', b.x, b.y, b.w);
       return true;
@@ -657,11 +664,14 @@ export class World {
     this.emitMinor('spit', z.x, z.y);
   }
 
-  launchAcid(x, y, tx, ty, speed, dmg) {
+  /** An aimed acid glob: kills ceil(dmg / hpPerSoldier) soldiers, or — frac > 0 (the boss) — a share
+   *  of the crowd, max(min, soldiers × frac), so it stays a threat at every level without one-shotting. */
+  launchAcid(x, y, tx, ty, speed, dmg, frac = 0, min = 1) {
     if (this.nS >= this.shots.length) return;
     const dx = tx - x, dy = ty - y, d = Math.max(1, Math.hypot(dx, dy));
     const p = this.shots[this.nS++];
     p.kind = 'acid'; p.x = x; p.y = y; p.vx = (dx / d) * speed; p.vy = (dy / d) * speed; p.dmg = dmg; p.r = 9; p.alive = true;
+    p.frac = frac; p.min = min;
   }
 
   healAround(z, dt) {
@@ -686,7 +696,7 @@ export class World {
       if (p.kind === 'acid') {
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (s.soldiers > 0 && Math.abs(p.x - this.crowdX) <= R * 0.85 + p.r && Math.abs(p.y - CROWD_Y) <= R * C.crowd.squash + p.r) {
-          const k = Math.min(s.soldiers, Math.max(1, Math.ceil(p.dmg / C.hpPerSoldier)));
+          const k = Math.min(s.soldiers, p.frac > 0 ? Math.max(p.min, Math.round(s.soldiers * p.frac)) : Math.max(1, Math.ceil(p.dmg / C.hpPerSoldier)));
           s.soldiers -= k;
           this.emit('acidhit', p.x, p.y, k);
           done = true;
@@ -889,7 +899,7 @@ export class World {
         if (bo.cool <= 0) { bo.cool += S.every * cd; bo.burst = S.globs; bo.burstT = 0; }
         if (bo.burst > 0 && (bo.burstT -= dt) <= 0) {   // a quick STREAM, each glob aimed where the crowd is now
           bo.burst--; bo.burstT += S.gap;
-          this.launchAcid(bo.x, bo.y + bo.r * 0.5, this.crowdX, CROWD_Y, S.speed, S.dmgMult * this.hpNow);
+          this.launchAcid(bo.x, bo.y + bo.r * 0.5, this.crowdX, CROWD_Y, S.speed, 0, S.killFrac, S.killMin);
           this.emit('spit', bo.x, bo.y, 1, 1);
         }
       } else if (bo.kind === 'tank') {

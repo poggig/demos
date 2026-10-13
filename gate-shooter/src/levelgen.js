@@ -15,6 +15,12 @@ export function zombieHpBase(level, endless = false) {
   const intro = D.introHpMult[Math.floor(level) - 1] ?? 1;
   return D.hpBase * intro * Math.pow(growth, Math.max(0, level - 1));
 }
+/** Campaign: zombie hp multiplier at a fraction f (0..1) of the level's road — the horde gets
+ *  tougher as the crowd grows through the level's gates. */
+export function hpRamp(f) {
+  const [a, b] = D.hpRamp;
+  return a + (b - a) * Math.max(0, Math.min(1, f));
+}
 /** Scale of the gate CAPS (green +n max, red −n max) at a level. */
 export function gateScale(level, endless = false) {
   if (endless) return 1 + CONFIG.endless.gateLinear * Math.max(0, level - 1);
@@ -48,6 +54,18 @@ export function refStart(level) {
 }
 export function refWeapon(level) {
   return Math.min(CONFIG.weapons.length - 1, Math.floor(Math.max(0, level - 1) * CONFIG.ref.weaponPerLevel));
+}
+/** Shop levels (damage and fire rate each) the reference player has bought before level L. */
+export function refShopLevel(level) {
+  return Math.floor(Math.max(0, level - 1) * CONFIG.ref.shopPerLevel);
+}
+/** Damage / fire-rate multipliers of the reference player on level L (its shop upgrades). */
+export function refMults(level) {
+  const k = refShopLevel(level), S = CONFIG.shop;
+  return {
+    damageMult: 1 + Math.min(k, S.damage.max) * S.damage.perLevel,
+    rateMult: 1 + Math.min(k, S.rate.max) * S.rate.perLevel,
+  };
 }
 
 // ── gate rows (specs are RELATIVE; gates.resolveGateSpec sizes them on the live crowd) ─────────
@@ -161,6 +179,24 @@ function emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, friendly, s
   }
 }
 
+/**
+ * Nothing hostile may start ON screen: when a level / run begins, every item closer than the spawn
+ * line would appear mid-road, a second or two from the crowd. Push everything after the opening
+ * gate row (items[0], visible from the start on purpose) back so the first zombie or vehicle
+ * enters from the top. Returns the shift (px) applied.
+ */
+function clearOpening(items, blocks) {
+  let first = Infinity;
+  for (const it of items) if (it.t === 'z' || it.t === 'v') first = Math.min(first, it.at);
+  const lead = CONFIG.crowd.y - CONFIG.track.spawnY;
+  const shift = Number.isFinite(first) ? Math.max(0, lead + G.hostileEnterMargin - first) : 0;
+  if (shift > 0) {
+    for (let i = 1; i < items.length; i++) items[i].at += shift;
+    for (let i = 1; i < blocks.length; i++) blocks[i].at += shift;
+  }
+  return shift;
+}
+
 function pickKind(rng, prev, prev2) {
   for (let tries = 0; tries < 8; tries++) {
     const k = rng.weighted(G.weights);
@@ -185,6 +221,7 @@ export function buildLevel(level, seed, ease = 1) {
   const gapShrink = Math.max(0, level - 1) * G.gapShrinkPerLevel;
   let at = G.firstBlockAt, prev = null, prev2 = null;
   const ramp = a => D.waveRamp[0] + (D.waveRamp[1] - D.waveRamp[0]) * Math.min(1, a / G.levelLength);
+  const hpAt = a => hpBase * hpRamp(a / G.levelLength);
   emitBlock(rng, items, 'gates', at, level, lanes, hpBase, ease, true, 1);
   blocks.push({ kind: 'gates', at });
   prev = 'gates';
@@ -193,14 +230,18 @@ export function buildLevel(level, seed, ease = 1) {
     if (at + gap > G.levelLength - G.minGap) break;
     at += gap;
     const kind = pickKind(rng, prev, prev2);
-    emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, false, ramp(at), false, G.levelLength * G.gentleUntil);
+    // level 1's first wave is the tutorial: zombies that die to one rifle bullet
+    const tutorial = level === 1 && kind !== 'gates' && !items.some(it => it.t === 'z');
+    const hp = tutorial ? Math.min(hpAt(at), G.tutorialWaveHp) : hpAt(at);
+    emitBlock(rng, items, kind, at, level, lanes, hp, ease, false, ramp(at), false, G.levelLength * G.gentleUntil);
     blocks.push({ kind, at });
     prev2 = prev; prev = kind;
   }
   // the last block before the boss is always a gate row: one more chance to power up
   at = Math.max(at + G.minGap, G.levelLength - G.minGap * 0.6);
-  emitBlock(rng, items, 'gates', at, level, lanes, hpBase, ease, false, 1);
+  emitBlock(rng, items, 'gates', at, level, lanes, hpAt(at), ease, false, 1);
   blocks.push({ kind: 'gates', at });
+  at += clearOpening(items, blocks);
   ensureWeaponGate(rng, items, G.firstBlockAt, G.levelLength * G.weaponGateBy);
   items.sort((a, b) => a.at - b.at);
   const length = at + G.minGap;
@@ -231,6 +272,7 @@ export function buildEndlessChunk(index, startAt, runSeed) {
     const gapShrink = Math.max(0, lvl - 1) * G.gapShrinkPerLevel;
     at += Math.max(G.minGap, rng.range(G.blockGap[0], G.blockGap[1]) - gapShrink);
   }
+  if (index === 0) at += clearOpening(items, []);   // the next chunk starts after the shifted items
   items.sort((a, b) => a.at - b.at);
   return { items, end: at };
 }
