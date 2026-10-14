@@ -155,10 +155,15 @@ export class OnlineGame {
     this.busy = true;
     try {
       const turn = this.game.turn;
-      const rows = must(await this.sb.rpc('locked_orders', { p_game: this.gameId, p_turn: turn }));
-      const byPlayer = Object.fromEntries(rows.map((r) => [r.player_id, r.orders]));
-      const { state } = resolveTurn(this.game.state, byPlayer);
-      must(await this.sb.rpc('commit_turn', { p_game: this.gameId, p_turn: turn, p_state: state }));
+      try {
+        const rows = must(await this.sb.rpc('locked_orders', { p_game: this.gameId, p_turn: turn }));
+        const byPlayer = Object.fromEntries(rows.map((r) => [r.player_id, r.orders]));
+        const { state } = resolveTurn(this.game.state, byPlayer);
+        must(await this.sb.rpc('commit_turn', { p_game: this.gameId, p_turn: turn, p_state: state }));
+      } catch (e) {
+        // Another player's client resolved this turn first: that is fine, just reload.
+        console.info('resolve skipped:', e.message);
+      }
       this.busy = false;
       await this.refresh();
     } finally {

@@ -1,8 +1,6 @@
 -- Starfall — Supabase schema. Paste this whole file into the Supabase SQL editor and run it once.
 -- Also enable: Authentication → Sign In / Providers → "Allow anonymous sign-ins".
 
-create extension if not exists pgcrypto;
-
 create table if not exists public.games (
   id uuid primary key default gen_random_uuid(),
   code text unique not null,
@@ -86,7 +84,7 @@ declare g uuid; c text;
 begin
   if auth.uid() is null then raise exception 'not signed in'; end if;
   loop
-    c := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 6));
+    c := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
     exit when not exists (select 1 from games where code = c);
   end loop;
   insert into games (code, name, host, settings, seed)
