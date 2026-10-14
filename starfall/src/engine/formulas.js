@@ -2,7 +2,7 @@
 import { BUILDINGS, RESEARCH, UNITS, SHIPS, DRIVE_BONUS } from './data.js';
 
 export const DEFAULT_SETTINGS = {
-  speed: 2,                 // economy speed (production ×, build time ÷), like universe speed
+  speed: 4,                 // economy speed (production ×, build time ÷), like universe speed
   fleetSpeed: 1,            // fleet speed multiplier
   turnHours: 6,             // game hours each turn represents
   hoursPerAp: 0.5,          // game hours of queue work one AP buys
