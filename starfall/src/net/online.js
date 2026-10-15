@@ -3,7 +3,7 @@
 import { createGame, resolveTurn } from '../engine/game.js';
 import * as CFG from '../../config.js';
 
-const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/+esm';
 let clientPromise = null;
 
 export function onlineConfig() {
