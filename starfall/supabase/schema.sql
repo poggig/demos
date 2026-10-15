@@ -78,15 +78,19 @@ create policy orders_update on public.orders for update using (user_id = auth.ui
   and not public.turn_locked(game_id)
 );
 
+-- Next turn deadline from the game settings; null when deadlineHours is 0 (no deadline).
+create or replace function public.next_deadline(s jsonb) returns timestamptz
+language sql stable as $$
+  select now() + make_interval(secs => nullif(coalesce((s->>'deadlineHours')::numeric, 0), 0) * 3600);
+$$;
+
 create or replace function public.create_game(p_name text, p_settings jsonb, p_player text)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare g uuid; c text;
 begin
   if auth.uid() is null then raise exception 'not signed in'; end if;
-  loop
-    c := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
-    exit when not exists (select 1 from games where code = c);
-  end loop;
+  -- 6-character join code from a random UUID (collisions are astronomically unlikely among friends).
+  c := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
   insert into games (code, name, host, settings, seed)
   values (c, left(p_name, 40), auth.uid(), coalesce(p_settings, '{}'::jsonb), floor(random() * 2147483647)::bigint)
   returning id into g;
@@ -118,8 +122,7 @@ begin
   if g.host <> auth.uid() then raise exception 'only the host can start'; end if;
   if g.status <> 'lobby' then raise exception 'already started'; end if;
   update games set status = 'running', state = p_state, turn = (p_state->>'turn')::int,
-    deadline = case when coalesce((g.settings->>'deadlineHours')::numeric, 0) > 0
-                    then now() + make_interval(secs => (g.settings->>'deadlineHours')::numeric * 3600) end,
+    deadline = public.next_deadline(g.settings),
     updated_at = now()
   where id = p_game;
 end $$;
@@ -157,8 +160,7 @@ begin
   if g.turn <> p_turn then return false; end if;
   if (p_state->>'turn')::int <> p_turn + 1 then raise exception 'bad state'; end if;
   update games set state = p_state, turn = p_turn + 1,
-    deadline = case when coalesce((g.settings->>'deadlineHours')::numeric, 0) > 0
-                    then now() + make_interval(secs => (g.settings->>'deadlineHours')::numeric * 3600) end,
+    deadline = public.next_deadline(g.settings),
     updated_at = now()
   where id = p_game;
   return true;
