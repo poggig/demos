@@ -122,7 +122,7 @@ function renderMenu() {
         <div class="row"><input data-m="gameName" placeholder="${t('name')}" value="${esc(m.gameName)}" maxlength="40"><button data-act="createOnline">${t('create')}</button></div>
         ${settingsForm(m.settings)}
         <div id="mygames">${m.online ? m.online.map((g) => `<div class="row"><button data-act="openOnline" data-id="${g.id}">${esc(g.name)}</button><span class="muted">${g.status === 'lobby' ? t('lobby') : `${t('turn')} ${g.turn}`} · ${g.code}</span></div>`).join('') : `<span class="muted">…</span>`}</div>
-        <details><summary>${t('supabaseSetup')}</summary>${cfgForm(cfg)}</details>`
+        ${cfg.fromFile ? '' : `<details><summary>${t('supabaseSetup')}</summary>${cfgForm(cfg)}</details>`}`
       : `<p class="muted">${t('notConfigured')}</p>${cfgForm(cfg)}`}
     </div>
 
@@ -158,7 +158,7 @@ function renderLobby() {
       <p>${t('inviteLink')}: <input readonly value="${esc(link)}" class="link"> <button class="mini" data-act="copy" data-id="${esc(link)}">${t('copy')}</button></p>
       <h4>${t('players')}</h4>
       ${a.members.map((m) => `<div>• ${esc(m.name)}${m.user_id === a.game.host ? ` (${t('host')})` : ''}${m.user_id === a.uid ? ` — ${t('you')}` : ''}</div>`).join('')}
-      ${a.isHost ? `<button class="primary" data-act="startOnline">${t('startGame')}</button>` : `<p class="muted">${t('waitingStart')}…</p>`}
+      ${a.isHost ? `<p class="muted small">${t('startHint')}</p><button class="primary" data-act="startOnline">${t('startGame')}</button>` : `<p class="muted">${t('waitingStart')}…</p>`}
     </div>
     <button class="mini" data-act="leave">${t('leave')}</button></div>`;
 }

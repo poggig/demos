@@ -7,12 +7,14 @@ const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/+esm';
 let clientPromise = null;
 
 export function onlineConfig() {
-  let url = CFG.SUPABASE_URL, key = CFG.SUPABASE_ANON_KEY;
+  // Keys committed in config.js win; the in-game setup form is only for builds without them.
+  if (CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY) return { url: CFG.SUPABASE_URL, key: CFG.SUPABASE_ANON_KEY, ok: true, fromFile: true };
+  let url = '', key = '';
   try {
-    url = localStorage.getItem('starfall.sbUrl') || url;
-    key = localStorage.getItem('starfall.sbKey') || key;
+    url = localStorage.getItem('starfall.sbUrl') || '';
+    key = localStorage.getItem('starfall.sbKey') || '';
   } catch {}
-  return { url, key, ok: !!(url && key) };
+  return { url, key, ok: !!(url && key), fromFile: false };
 }
 
 export function saveOnlineConfig(url, key) {
