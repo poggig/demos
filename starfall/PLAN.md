@@ -1,6 +1,6 @@
 # Starfall — design plan
 
-A private, turn-based reimagining of the classic browser space-strategy game (OGame-style).
+A private, turn-based reimagining of the classic browser space-strategy game.
 Same mathematics; no real-time countdowns. Everyone plays the same number of actions per turn,
 so strategy — not hours spent online — decides who wins.
 
