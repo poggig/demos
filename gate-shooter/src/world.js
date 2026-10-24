@@ -2,9 +2,9 @@
 // the audio read its state + its event queue. The Node winnability simulator runs this same code.
 import { CONFIG } from './config.js';
 import { Rng, hashSeed } from './rng.js';
-import { resolveGateSpec, applyGate, hitGate, gateTone, powerAfter, isBonusGate } from './gates.js';
+import { resolveGateSpec, applyGate, hitGate, gateTone, powerAfter, isBonusGate, giveWeapon, weaponRating } from './gates.js';
 import { contactKills, planVolley, bulletsPerTickCap, crowdRadius, drawnCount, FORMATION } from './crowd.js';
-import { buildEndlessChunk, eqLevel, zombieHpBase, gateScale } from './levelgen.js';
+import { buildEndlessChunk, eqLevel, zombieHpBase, gateScale, hpRamp } from './levelgen.js';
 import { coinScale } from './economy.js';
 
 const C = CONFIG;
@@ -15,6 +15,7 @@ const LEAD = CROWD_Y - C.track.spawnY;         // track distance between spawn l
 const GATE_H = C.gates.h;
 const MAX_EVENTS = 320;
 const TAU = Math.PI * 2;
+const KNOCK_TOP = 150;                          // water can't push zombies above this (below the HUD)
 
 export class World {
   /**
@@ -75,7 +76,8 @@ export class World {
     // pools
     const nb = C.maxBullets + 8;
     this.bullets = new Array(nb);
-    for (let i = 0; i < nb; i++) this.bullets[i] = { x: 0, y: 0, vx: 0, vy: 0, dmg: 0, hits: 0, r: 0, splash: 0, splashF: 0, gateHits: 1, w: 0, pierce: false, h1: null, h2: null };
+    for (let i = 0; i < nb; i++) this.bullets[i] = { x: 0, y: 0, vx: 0, vy: 0, dmg: 0, hits: 0, r: 0, splash: 0, splashF: 0, gateHits: 1, w: 0, pierce: false, h1: null, h2: null,
+      life: 0, age: 0, kb: 0, slowT: 0, slowM: 1 };
     this.nB = 0;
     this.zombies = new Array(C.maxZombies);
     for (let i = 0; i < C.maxZombies; i++) this.zombies[i] = this.blankZombie();
@@ -110,7 +112,7 @@ export class World {
   blankZombie() {
     return { x: 0, y: 0, hp: 0, maxHp: 0, hpBase: 0, type: 'walker', t: null, r: 0, alive: false, phase: 0, flash: 0,
       veh: false, w: 0, h: 0, warn: 0, swerved: false, tx: 0, state: 0, timer: 0, cool: 0, holdY: 0, armored: false,
-      _hpShown: -1, _hpStr: '' };
+      slowT: 0, slowM: 1, _hpShown: -1, _hpStr: '' };
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -132,6 +134,22 @@ export class World {
   get boss() { return this.bosses.length ? this.bosses[0] : null; }
   get bossHpTotal() { let s = 0; for (const b of this.bosses) s += Math.max(0, b.hp); return s; }
   /** How far the most advanced boss has walked toward the crowd (0 at the end of its entrance, 1 = contact). */
+  /** 0..1 dread while a boss walks in: 0 until boss.heartbeat.from of its walk, 1 at contact (heartbeat + red pulse). */
+  get bossTension() {
+    if (!this.bossPhase || this.status !== 'running' || !this.bosses.length || this.bossArriveT < 0) return 0;
+    const f = C.boss.heartbeat.from;
+    return Math.max(0, Math.min(1, (this.bossWalk() - f) / (1 - f)));
+  }
+  /** Metres between the nearest boss and the crowd (10 px = 1 m). */
+  get bossDistance() {
+    let d = Infinity;
+    for (const bo of this.bosses) d = Math.min(d, CROWD_Y - this.crowdR * C.crowd.squash - (bo.y + bo.r * 0.75));
+    return Number.isFinite(d) ? Math.max(0, Math.round(d / 10)) : 0;
+  }
+
+  /** Hp of the zombies a boss summons or brings along: as tough as the road at boss.minionRamp of the level. */
+  bossMinionHp() { return this.endless ? this.hpNow : this.hpNow * hpRamp(C.boss.minionRamp); }
+
   bossWalk() {
     let p = 0;
     for (const bo of this.bosses) {
@@ -166,7 +184,7 @@ export class World {
     } else if (it.t === 'v') this.spawnVehicle(it.type, it.x, it.hp);
     else if (it.t === 'a') {
       const a = C.allies[it.type];
-      this.allies.push({ type: it.type, x: it.x, y, w: a.w, h: a.h, alive: true });
+      this.allies.push({ type: it.type, x: it.x, y, w: a.w, h: a.h, alive: true, weapon: it.w ?? -1 });
     }
   }
 
@@ -177,7 +195,7 @@ export class World {
     z.type = type; z.t = t; z.x = x; z.y = y; z.hp = hp; z.maxHp = hp; z.hpBase = hp / t.hpMult;
     z.r = t.r; z.alive = true; z.phase = this.rng.next() * TAU; z.flash = 0; z._hpShown = -1;
     z.veh = false; z.w = 0; z.h = 0; z.warn = 0; z.swerved = false; z.state = 0; z.timer = 0; z.cool = 0;
-    z.armored = !!t.armor;
+    z.armored = !!t.armor; z.slowT = 0; z.slowM = 1;
     const H = t.spit || t.heal;
     z.holdY = H ? (Array.isArray(H.holdY) ? H.holdY[0] + this.rng.next() * (H.holdY[1] - H.holdY[0]) : H.holdY) : 0;
     return z;
@@ -206,7 +224,7 @@ export class World {
   makeBoss(kind, elite, x, y, hp, scale) {
     const S = C.boss[kind] || {};
     return { kind, elite, x, y, cx: x, offX: 0, hp, maxHp: hp, r: C.boss.r * scale, scale, stompT: 0, flash: 0, phase: 0,
-      cool: Math.min(C.boss.firstSpecial, (S.every || 3) * 0.25), burst: 0, burstT: 0, state: 'walk', st: 0, shield: 0, split: scale < 1, _hpShown: -1, _hpStr: '' };
+      cool: Math.min(C.boss.firstSpecial, (S.every || 3) * 0.25), escortT: C.boss.escort ? C.boss.escort.every * 0.45 : 0, burst: 0, burstT: 0, state: 'walk', st: 0, shield: 0, split: scale < 1, _hpShown: -1, _hpStr: '' };
   }
 
   laneOf(x, lanes) {
@@ -315,14 +333,14 @@ export class World {
         // switch if the crash would be deadly, or if the other gate is nearly as good
         const crash = contactKills(z.hp / C.vehicles.contactDiv, z.t.weight);
         const deadly = crash >= this.stats.soldiers * 0.6;
-        if (alt >= 0 && (deadly || altP >= 0.7 * powerAfter(this.stats, row.gates[this._aiLane]))) { this._aiLane = alt; tx = ROAD_L + row.laneW * (alt + 0.5); }
+        if (alt >= 0 && (deadly || altP >= 0.7 * powerAfter(this.stats, row.gates[this._aiLane]))) tx = ROAD_L + row.laneW * (alt + 0.5); // this frame only
       }
     }
     if (this.bossPhase && this.bosses.length) tx = this.bosses[0].x;
     else if (!worst && (!row || row.y < CROWD_Y - 330)) {
       // between rows: grab an allied pickup on the way, else go and shoot a planted spitter/shaman …
       let ally = null;
-      for (const a of this.allies) if (a.alive && a.y > 120 && a.y < CROWD_Y - 40 && (!ally || a.y > ally.y)) ally = a;
+      for (const a of this.allies) if (a.alive && a.y > 120 && a.y < CROWD_Y - 40 && this.wantsAlly(a) && (!ally || a.y > ally.y)) ally = a;
       if (ally) tx = ally.x;
       else {
         // the biggest threat on screen: planted spitters/shamans first, else the zombie that
@@ -337,8 +355,12 @@ export class World {
         }
         if (hunt && best >= Math.min(3, Math.max(1, this.stats.soldiers * 0.1))) tx = hunt.x;
       }
-      // … and step out of the lane of an incoming vehicle
+      // … and step out of the lane of an incoming vehicle (or of a crate with a worse weapon)
       if (this.aiDodge) {
+        for (const a of this.allies) {
+          if (!a.alive || this.wantsAlly(a) || a.y < CROWD_Y - 260 || a.y > CROWD_Y + 40) continue;
+          if (Math.abs(a.x - tx) < a.w / 2 + crowdRadius(this.stats.soldiers) * 0.6 + 12) tx = a.x < ROAD_MID ? a.x + a.w / 2 + 90 : a.x - a.w / 2 - 90;
+        }
         for (let j = 0; j < this.nZ; j++) {
           const z = this.zombies[j];
           if (!z.alive || !z.veh || z.y - z.h / 2 > CROWD_Y + 60) continue;   // until it is fully past
@@ -361,6 +383,13 @@ export class World {
       }
     }
     this.targetX = tx;
+  }
+
+  /** Autopilot: is this road pickup worth driving into? (a crate only if its weapon is better, or the same one) */
+  wantsAlly(a) {
+    if (a.type !== 'crate') return true;
+    const s = this.stats;
+    return a.weapon === s.weapon || weaponRating(a.weapon) > weaponRating(s.weapon);
   }
 
   // ── shooting ───────────────────────────────────────────────────────────────
@@ -391,6 +420,8 @@ export class World {
       b.dmg = v.damage; b.hits = v.hits; b.r = w.radius; b.w = s.weapon;
       b.splash = w.splash || 0; b.splashF = w.splashFactor || 0; b.gateHits = w.gateHits || 1;
       b.pierce = !!w.pierce; b.h1 = null; b.h2 = null;
+      b.life = w.range ? w.range / w.speed : 0; b.age = 0; b.kb = w.knockback || 0;
+      b.slowT = w.slow ? w.slow.time : 0; b.slowM = w.slow ? w.slow.mult : 1;
     }
     if (v.count > 0) this.emitMinor('shot', this.crowdX, CROWD_Y, s.weapon);
   }
@@ -408,8 +439,8 @@ export class World {
   updateBullets(dt) {
     for (let i = 0; i < this.nB;) {
       const b = this.bullets[i];
-      b.x += b.vx * dt; b.y += b.vy * dt;
-      let dead = b.y < -40 || b.x < ROAD_L - 40 || b.x > ROAD_R + 40;
+      b.x += b.vx * dt; b.y += b.vy * dt; b.age += dt;
+      let dead = b.y < -40 || b.x < ROAD_L - 40 || b.x > ROAD_R + 40 || (b.life > 0 && b.age >= b.life); // flames burn out
       if (!dead) dead = this.bulletVsZombies(b);
       if (!dead) dead = this.bulletVsRows(b);
       if (!dead && this.bosses.length) dead = this.bulletVsBoss(b);
@@ -428,7 +459,8 @@ export class World {
     for (let j = 0; j < this.nZ; j++) {
       const z = zs[j];
       if (!z.alive || (z.veh && z.warn > 0) || !World.touches(z, b.x, b.y, b.r)) continue;
-      if (b.pierce) {                         // laser: hurts everything in line, once each
+      if ((b.kb > 0 || b.slowT > 0) && !(b.pierce && (z === b.h1 || z === b.h2))) this.bulletEffects(b, z);
+      if (b.pierce) {                         // laser / flames: hurt everything in line, once each
         if (z === b.h1 || z === b.h2) continue;
         b.h2 = b.h1; b.h1 = z;
         this.hurtZombie(z, b.dmg);
@@ -444,6 +476,20 @@ export class World {
       b.hits *= left / dmg; b.dmg = left;
     }
     return false;
+  }
+
+/** Water shoves a zombie back up the road; egg yolk slows it (and everything in the splash). Never vehicles. */
+  bulletEffects(b, z) {
+    if (b.kb > 0 && !z.veh && z.y > KNOCK_TOP) z.y = Math.max(KNOCK_TOP, z.y - b.kb * Math.min(4, Math.max(1, b.hits)));
+    if (b.slowT > 0) {
+      const r2 = b.splash * b.splash;
+      for (let j = 0; j < this.nZ; j++) {
+        const o = this.zombies[j];
+        if (!o.alive || o.veh) continue;
+        const dx = o.x - b.x, dy = o.y - b.y;
+        if (o === z || dx * dx + dy * dy <= r2) { o.slowT = Math.max(o.slowT, b.slowT); o.slowM = b.slowM; }
+      }
+    }
   }
 
   /** Apply damage (armour aware). Returns −1 if the zombie survives, else the leftover damage. */
@@ -624,6 +670,8 @@ export class World {
         continue;
       }
       let vy = this.scroll + t.speed;
+      let slow = 1;
+      if (z.slowT > 0) { z.slowT -= dt; slow = z.slowM; vy *= slow; }
       const H = t.spit || t.heal;
       if (H) {                                             // spitters and shamans plant themselves
         if (z.state === 0 && z.y >= z.holdY) { z.state = 1; z.timer = H.hold; z.cool = t.spit ? t.spit.every * 0.4 : 0; }
@@ -638,7 +686,7 @@ export class World {
       z.y += vy * dt;
       if (t.zigzag) z.x += Math.cos(this.time * t.zigzag.freq * TAU + z.phase) * t.zigzag.amp * t.zigzag.freq * TAU * dt;
       if (z.state !== 1 && z.y > C.homingFromY && z.y < bottom) {
-        const dx = cx - z.x, m = t.home * dt;
+        const dx = cx - z.x, m = t.home * slow * dt;
         z.x += dx > m ? m : dx < -m ? -m : dx;
       }
       if (z.x < ROAD_L + z.r) z.x = ROAD_L + z.r; else if (z.x > ROAD_R - z.r) z.x = ROAD_R - z.r;
@@ -741,6 +789,11 @@ export class World {
         if (a.type === 'tank') {
           this.tankT = C.allies.tank.duration; this.tankCool = 0.3;
           this.emit('ally', a.x, a.y, 0, 0, 'tank');
+        } else if (a.type === 'crate') {
+          const prev = s.weapon;
+          giveWeapon(s, a.weapon);
+          this.emit('ally', a.x, a.y, a.weapon, 0, 'crate');
+          if (s.weapon !== prev) this.emit('weapon', this.crowdX, CROWD_Y, s.weapon);
         } else {
           const T = C.allies.truck;
           const cap = Math.round(T.capMult * C.gates.addCap * gateScale(this.level, this.endless));
@@ -844,6 +897,7 @@ export class World {
         const res = applyGate(this.stats, g);
         this.emit('gate', ROAD_L + r.laneW * (lane + 0.5), r.y, res.after - res.before, gateTone(g) === 'bad' ? -1 : 1, g.kind);
         if (this.stats.weapon !== prevWeapon) this.emit('weapon', this.crowdX, CROWD_Y, this.stats.weapon);
+        else if (g.kind === 'weapon') this.emit('sameWeapon', ROAD_L + r.laneW * (lane + 0.5), r.y, g.w);
         if (isBonusGate(g)) {
           if (g.kind === 'airstrike') this.triggerAirstrike();
           else { this.heliT = C.bonuses.heli.duration; this.heliCool = 0.4; this.emit('heli', this.crowdX, CROWD_Y); }
@@ -887,7 +941,7 @@ export class World {
           for (let k = 0; k < S.summon; k++) {
             const a = (k / S.summon) * Math.PI + Math.PI;
             const t = C.zombieTypes[S.type];
-            this.spawnZombie(S.type, Math.max(ROAD_L + 20, Math.min(ROAD_R - 20, bo.x + Math.cos(a) * bo.r * 1.1)), bo.y + bo.r * 0.4, this.hpNow * t.hpMult);
+            this.spawnZombie(S.type, Math.max(ROAD_L + 20, Math.min(ROAD_R - 20, bo.x + Math.cos(a) * bo.r * 1.1)), bo.y + bo.r * 0.4, this.bossMinionHp() * t.hpMult);
           }
           this.emit('summon', bo.x, bo.y, S.summon, 0, bo.kind);
         }
@@ -914,8 +968,22 @@ export class World {
         }
       }
     }
+    // its horde keeps coming while it walks (the summoners raise their own); one escort per boss, not per blob half
+    const E = B.escort;
+    if (E && bo.y >= B.specialFromY && bo.kind !== 'king' && bo.kind !== 'necro' && bo.scale >= 1) {
+      bo.escortT -= dt;
+      if (bo.escortT <= 0) {
+        bo.escortT += E.every * cd;
+        for (let k = 0; k < E.count; k++) {
+          const type = this.rng.weighted(E.types), side = k % 2 ? 1 : -1;
+          const x = Math.max(ROAD_L + 20, Math.min(ROAD_R - 20, bo.x + side * (bo.r + 18 + k * 14)));
+          this.spawnZombie(type, x, bo.y - bo.r * 0.1, this.bossMinionHp() * C.zombieTypes[type].hpMult);
+        }
+        this.emit('summon', bo.x, bo.y, E.count, 0, 'escort');
+      }
+    }
     bo.stompT += dt;
-    if (bo.stompT >= B.stompEvery) { bo.stompT -= B.stompEvery; this.emit('stomp', bo.x, bo.y, bo.scale); }
+    if (bo.stompT >= B.stompEvery) { bo.stompT -= B.stompEvery; this.emit('stomp', bo.x, bo.y, bo.scale, this.bossWalk()); }
     const R = crowdRadius(s.soldiers);
     if (s.soldiers > 0 && bo.y + bo.r * 0.75 >= CROWD_Y - R * C.crowd.squash) {
       this.emit('contact', this.crowdX, CROWD_Y, s.soldiers, bo.r, 'boss');

@@ -148,6 +148,7 @@ function enterPlay() {
   ui.setHud(true);
   audio.duck(false);
   audio.playMusic('game');
+  if (run && run.mode === 'campaign') renderer.levelIntro(world);
   acc = 0;
   last = performance.now();
 }
@@ -283,7 +284,8 @@ function handleEvents(w, withAudio) {
       case 'armor': audio.clang(); break;
       case 'gate': if (e.b > 0) audio.gateGood(); else audio.gateBad(); break;
       case 'gatestep': audio.gateStep(); break;
-      case 'weapon': audio.weapon(); break;
+      case 'weapon': audio.weapon(e.a); break;
+      case 'sameWeapon': audio.pickup(); break;
       case 'boss': audio.bossRoar(); audio.playMusic('boss'); break;
       case 'stomp': audio.stomp(); break;
       case 'bossdie': audio.bossDie(); break;
@@ -311,6 +313,7 @@ function loop(now) {
     while (acc >= step && n < maxSteps) { world.step(step); acc -= step; n++; }
     if (n >= maxSteps) acc = 0;
     handleEvents(world, true);
+    audio.heartbeat(dt * timeScale, world.bossTension);
     bankCoins();
     flushSave(false);
     if (world.status === 'won' && world.endTime > 1.6 && !world._endShown) { world._endShown = true; onWon(); }
@@ -432,6 +435,7 @@ if (DEBUG) {
     tank() { if (world) { world.tankT = CONFIG.allies.tank.duration; world.tankCool = 0.3; } },
     vehicle(type = 'bus', x = 270) { if (world) world.spawnVehicle(type, x, world.hpNow * CONFIG.vehicles[type].hpMult); },
     ally(type = 'tank', x = 270) { if (world) { const a = CONFIG.allies[type]; world.allies.push({ type, x, y: 250, w: a.w, h: a.h, alive: true }); } },
+    crate(w = 7, x = 270) { if (world) { const a = CONFIG.allies.crate; world.allies.push({ type: 'crate', x, y: 250, w: a.w, h: a.h, alive: true, weapon: w }); } },
     zombie(type = 'walker', x = 270, y = 200) { if (world) world.spawnZombie(type, x, y, world.hpNow * CONFIG.zombieTypes[type].hpMult); },
   };
   fpsEl = document.createElement('div');

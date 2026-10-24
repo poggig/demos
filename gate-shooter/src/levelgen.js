@@ -53,7 +53,20 @@ export function refStart(level) {
   return Math.max(1, Math.round(R.start[n - 1] * Math.pow(R.startGrowth, L - n)));
 }
 export function refWeapon(level) {
-  return Math.min(CONFIG.weapons.length - 1, Math.floor(Math.max(0, level - 1) * CONFIG.ref.weaponPerLevel));
+  const ladder = CONFIG.ref.weapons;
+  const id = ladder[Math.min(ladder.length - 1, Math.floor(Math.max(0, level - 1) * CONFIG.ref.weaponPerLevel))];
+  return weaponIndex(id);
+}
+export function weaponIndex(id) {
+  const i = CONFIG.weapons.findIndex(w => w.id === id);
+  if (i < 0) throw new Error('unknown weapon ' + id);
+  return i;
+}
+/** A random weapon of the level's pool (from ≤ level, weighted by 'offer') — gates and crates. */
+export function pickWeapon(rng, level) {
+  const weights = {};
+  CONFIG.weapons.forEach((w, i) => { if (w.offer > 0 && w.from <= level) weights[i] = w.offer; });
+  return Number(rng.weighted(weights));
 }
 /** Shop levels (damage and fire rate each) the reference player has bought before level L. */
 export function refShopLevel(level) {
@@ -90,7 +103,10 @@ export function genGateRow(rng, lanes, level, friendly, endless = false, gentle 
   const rareLane = rng.chance(D.rareChance) ? rng.int(0, lanes - 1) : -1;
   const bad = badChance(level) * (gentle ? G.gentleBad[Math.min(1, Math.floor(level) - 1)] : 1);
   for (let i = 0; i < lanes; i++) {
-    if (i === rareLane) gates.push({ kind: rng.weighted(D.rareWeights) });
+    if (i === rareLane) {
+      const kind = rng.weighted(D.rareWeights);
+      gates.push(kind === 'weapon' ? { kind, w: pickWeapon(rng, level) } : { kind });
+    }
     else if (rng.chance(bad)) gates.push(gentle ? { kind: 'add', sign: -1, rel: rng.range(GT.badRel[0], GT.badRel[1]) } : badGate(rng, level));
     else gates.push(goodGate(rng, endless));
   }
@@ -104,7 +120,7 @@ export function genGateRow(rng, lanes, level, friendly, endless = false, gentle 
 }
 
 /** Make sure some gate row in (from, to] offers a WEAPON gate (keeps one green soldier gate). */
-function ensureWeaponGate(rng, items, from, to) {
+function ensureWeaponGate(rng, items, from, to, level) {
   const rows = items.filter(it => it.t === 'g' && it.at > from && it.at <= to);
   if (!rows.length || rows.some(r => r.gates.some(g => g.kind === 'weapon'))) return;
   const row = rng.pick(rows);
@@ -116,7 +132,7 @@ function ensureWeaponGate(rng, items, from, to) {
   };
   let best = -1, bestS = -1;
   for (let i = 0; i < row.gates.length; i++) { const s = score(i) + rng.next() * 0.5; if (s > bestS) { bestS = s; best = i; } }
-  row.gates[best] = { kind: 'weapon' };
+  row.gates[best] = { kind: 'weapon', w: pickWeapon(rng, level) };
 }
 
 // ── zombies, vehicles, allies ────────────────────────────────────────────────
@@ -155,6 +171,12 @@ function placeVehicle(rng, out, level, lanes, hpBase, at, ease) {
   out.push({ t: 'v', at, type, x, hp: hpBase * CONFIG.vehicles[type].hpMult * ease });
 }
 
+/** A weapon crate on the road after a wave: drive into it to swap to its (random) weapon. */
+function placeCrate(rng, out, level, lanes, at) {
+  if (!rng.chance(G.crateChance)) return;
+  out.push({ t: 'a', at, type: 'crate', x: rng.pick(laneCenters(lanes)), w: pickWeapon(rng, level) });
+}
+
 function placeAlly(rng, out, lanes, at) {
   if (!rng.chance(G.allyChance)) return;
   out.push({ t: 'a', at, type: rng.chance(0.55) ? 'tank' : 'truck', x: rng.pick(laneCenters(lanes)) });
@@ -176,6 +198,7 @@ function emitBlock(rng, items, kind, at, level, lanes, hpBase, ease, friendly, s
     const n = Math.max(2, Math.round(waveSize(level) * sizeMult * rng.range(0.85, 1.15) * ease));
     placeRows(rng, items, n, level, hpBase, at, +1, ease, null, gentleBefore);
     placeVehicle(rng, items, level, lanes, hpBase, at + 140, ease);
+    placeCrate(rng, items, level, lanes, at + 330);
   }
 }
 
@@ -230,8 +253,8 @@ export function buildLevel(level, seed, ease = 1) {
     if (at + gap > G.levelLength - G.minGap) break;
     at += gap;
     const kind = pickKind(rng, prev, prev2);
-    // level 1's first wave is the tutorial: zombies that die to one rifle bullet
-    const tutorial = level === 1 && kind !== 'gates' && !items.some(it => it.t === 'z');
+    // level 1's opening (its gentle part, and at least its first wave) is the tutorial: one-bullet zombies
+    const tutorial = level === 1 && kind !== 'gates' && (at < G.levelLength * G.gentleUntil || !items.some(it => it.t === 'z'));
     const hp = tutorial ? Math.min(hpAt(at), G.tutorialWaveHp) : hpAt(at);
     emitBlock(rng, items, kind, at, level, lanes, hp, ease, false, ramp(at), false, G.levelLength * G.gentleUntil);
     blocks.push({ kind, at });
@@ -242,7 +265,7 @@ export function buildLevel(level, seed, ease = 1) {
   emitBlock(rng, items, 'gates', at, level, lanes, hpAt(at), ease, false, 1);
   blocks.push({ kind: 'gates', at });
   at += clearOpening(items, blocks);
-  ensureWeaponGate(rng, items, G.firstBlockAt, G.levelLength * G.weaponGateBy);
+  ensureWeaponGate(rng, items, G.firstBlockAt, G.levelLength * G.weaponGateBy, level);
   items.sort((a, b) => a.at - b.at);
   const length = at + G.minGap;
   return {

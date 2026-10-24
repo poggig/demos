@@ -13,7 +13,7 @@ export function carryOverStart(survivors, shopStart) {
 
 /** Max bullets one fire tick may emit so that at most CONFIG.maxBullets are ever in flight. */
 export function bulletsPerTickCap(weapon) {
-  const flight = (CONFIG.crowd.y - CONFIG.track.spawnY) / weapon.speed; // s to leave the screen
+  const flight = Math.min(weapon.range || Infinity, CONFIG.crowd.y - CONFIG.track.spawnY) / weapon.speed; // s in flight
   const ticksInFlight = Math.max(1, Math.ceil(flight / CONFIG.fireTick));
   return Math.max(1, Math.floor(CONFIG.maxBullets / ticksInFlight));
 }

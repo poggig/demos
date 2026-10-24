@@ -8,6 +8,7 @@ import { gateTone, gateLabel, isSoldierGate } from './gates.js';
 import { lanesFor } from './levelgen.js';
 import { t, bossName, zombieName } from './i18n.js';
 import { fmtNum } from './util.js';
+import { drawScenery, currentScene, sceneName, Weather } from './scenery.js';
 
 const C = CONFIG, P = THEME.palette;
 const W = C.view.w, H = C.view.h;
@@ -16,17 +17,14 @@ const CY = C.crowd.y;
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const TONE = { good: P.gateGood, bad: P.gateBad, neutral: P.gateNeutral };
 const WEAPON_IDS = C.weapons.map(w => w.id);
+const WEAPON_FX = C.weapons.map(w => w.fx || 'bullet');
+const CHICKEN = WEAPON_IDS.indexOf('chicken');
+const HIT_COLOR = { laser: P.laser, water: P.water, flame: P.flame, egg: P.yolk };
 const SOLDIER_ORDER = FORMATION.map((p, i) => i).sort((a, b) => FORMATION[a].y - FORMATION[b].y);
 const COIN_TARGET = { x: 492, y: 40 }; // logical position of the HUD coin counter
 const HUD_BAND = 118; // logical px: bottom of the DOM HUD
 const TAU = Math.PI * 2;
 const RARE_CAPTION = { rate: 'gateRate', damage: 'gateDamage', weapon: 'gateWeapon', airstrike: 'gateAirstrike', heli: 'gateHeli' };
-
-function hash(i) {
-  let h = Math.imul(i ^ 0x5bd1e995, 0x2c1b3c6d);
-  h ^= h >>> 15; h = Math.imul(h, 0x297a2d39); h ^= h >>> 13;
-  return (h >>> 0) / 4294967296;
-}
 
 export class Renderer {
   constructor(canvas) {
@@ -44,6 +42,7 @@ export class Renderer {
     this.nF = 0;
     this.banner = { text: '', sub: '', life: 0, max: 1, color: '#fff' };
     this.jets = [];                    // air-strike fly-overs
+    this.weather = new Weather();
     this.heliA = 0;                    // helicopter fade in/out
     this.shakeT = 0; this.shakeMag = 0;
     this.dmgFlash = 0;
@@ -106,14 +105,16 @@ export class Renderer {
     const f = this.floaters[this.nF++];
     f.x = x; f.y = y; f.text = text; f.color = color; f.life = 1.1; f.max = 1.1; f.size = size;
   }
-  showBanner(text, sub, color, life = 2) { const b = this.banner; b.text = text; b.sub = sub || ''; b.color = color; b.life = life; b.max = life; }
+  /** Campaign level start: "LEVEL 3" + the name of the place. */
+  levelIntro(world) { this.showBanner(t('levelIntro', { n: world.levelInt }), sceneName(world), '#ffffff', 2.2); this.banner.y = 270; }
+  showBanner(text, sub, color, life = 2) { const b = this.banner; b.text = text; b.sub = sub || ''; b.color = color; b.life = life; b.max = life; b.y = 380; }
   shake(mag, time) { this.shakeMag = Math.max(this.shakeT > 0 ? this.shakeMag : 0, mag); this.shakeT = Math.max(this.shakeT, time); }
 
   /** Visual reaction to a world event (audio is routed by main.js). */
   onEvent(e, world) {
     switch (e.type) {
       case 'zhit':
-        if (Math.random() < 0.35) this.part(4, e.x, e.y, (Math.random() - 0.5) * 160, -60 - Math.random() * 100, 0.18, 3, e.a === 5 ? P.laser : P.bulletCore);
+        if (Math.random() < 0.35) this.part(4, e.x, e.y, (Math.random() - 0.5) * 160, -60 - Math.random() * 100, 0.18, WEAPON_FX[e.a] === 'water' ? 4 : 3, HIT_COLOR[WEAPON_FX[e.a]] || P.bulletCore);
         break;
       case 'zdie': {
         const big = e.b >= 25;
@@ -199,10 +200,14 @@ export class Renderer {
         this.tracer(e.x, e.y + 10, e.a + (Math.random() - 0.5) * 10, e.b, P.bullet, 3);
         if (Math.random() < 0.5) this.part(4, e.a, e.b, (Math.random() - 0.5) * 140, -40 - Math.random() * 80, 0.15, 3, P.bulletCore);
         break;
+      case 'sameWeapon':
+        this.floater(e.x, e.y - 40, t(WEAPON_IDS[e.a]) + ' ×' + C.gates.rare.sameWeaponDamage, P.gateRare, 28);
+        break;
       case 'ally':
         this.confetti(e.x, e.y, 22, [P.gateGood, '#ffffff', P.allyTank], 380);
         this.ring(e.x, e.y, 70, 'rgba(255,255,255,0.9)', 0.4);
         if (e.s === 'tank') this.showBanner(t('tankJoin'), '', P.gateGood, 1.6);
+        else if (e.s === 'crate') { if (e.a === world.stats.weapon) this.floater(e.x, e.y - 50, t(WEAPON_IDS[e.a]) + ' ×' + C.gates.rare.sameWeaponDamage, P.gateRare, 28); }
         else this.floater(e.x, e.y - 50, t('reinforcements', { n: fmtNum(e.a) }), P.gateGood, 30);
         break;
       case 'tankShot':
@@ -216,11 +221,11 @@ export class Renderer {
         this.shake(C.fx.shakeBoss, 0.6);
         break;
       case 'stomp':
-        this.shake(C.fx.shakeStomp * (e.a || 1), 0.18);
+        this.shake(C.fx.shakeStomp * (e.a || 1) * (0.6 + 1.6 * (e.b || 0)), 0.18 + 0.1 * (e.b || 0)); // closer = heavier
         this.ring(e.x, e.y + 70 * (e.a || 1), 90 * (e.a || 1), 'rgba(120,90,60,0.55)', 0.4);
         break;
       case 'summon':
-        this.ring(e.x, e.y + 20, 110, e.s === 'necro' ? 'rgba(125,255,122,0.85)' : 'rgba(255,210,63,0.85)', 0.5);
+        this.ring(e.x, e.y + 20, 110, e.s === 'necro' ? 'rgba(125,255,122,0.85)' : e.s === 'escort' ? 'rgba(239,68,68,0.7)' : 'rgba(255,210,63,0.85)', 0.5);
         this.burst(e.x, e.y + 40, 12, e.s === 'necro' ? P.necroGlow : P.zombieSkinDark, 220, 5, 0.5);
         break;
       case 'telegraph':
@@ -266,6 +271,9 @@ export class Renderer {
   // ── per-frame update of fx ─────────────────────────────────────────────────
   updateFx(dt, world) {
     this.time += dt;
+    this.tension = world ? world.bossTension : 0;
+    this.weather.update(dt, currentScene(world).weather, world ? world.scroll : C.track.scrollSpeed);
+    if (this.tension > 0) { const [b0, b1] = C.boss.heartbeat.bpm; this.beat = (this.beat || 0) + dt * (b0 + (b1 - b0) * this.tension) / 60; }
     for (let i = 0; i < this.nP;) {
       const p = this.parts[i];
       p.life -= dt;
@@ -309,6 +317,12 @@ export class Renderer {
     const f = weight + ' ' + size + 'px ' + FONT;
     if (f !== this.font) { this.c.font = f; this.font = f; }
   }
+  /** Largest font size ≤ size (≥ min) at which s fits in maxW logical px. */
+  fitSize(s, maxW, size, min) {
+    this.setFont(size);
+    const w = this.c.measureText(s).width;
+    return w <= maxW ? size : Math.max(min, Math.floor(size * maxW / w));
+  }
   text(s, x, y, size, fill, outline = P.outline, lw = 0, align = 'center') {
     const c = this.c;
     this.setFont(size);
@@ -344,10 +358,21 @@ export class Renderer {
     }
     this.drawJets();
     this.drawParticles();
+    this.weather.draw(c);
     c.setTransform(k, 0, 0, k, 0, 0);
     if (world) this.drawWarnings(world);
     if (world && world.bosses.length) this.drawBossBar(world);
     this.drawBanner();
+    if (this.tension > 0) {                            // dread: a red heartbeat pulse closing in
+      if (!this.dread) {
+        this.dread = c.createRadialGradient(W / 2, H * 0.55, H * 0.16, W / 2, H * 0.55, H * 0.7);
+        this.dread.addColorStop(0, 'rgba(160,0,20,0)');
+        this.dread.addColorStop(1, 'rgba(190,0,25,0.85)');
+      }
+      const ph = this.beat % 1, lub = Math.exp(-ph * 9), dub = ph > 0.2 ? Math.exp(-(ph - 0.2) * 9) * 0.7 : 0;
+      c.globalAlpha = Math.min(1, 0.15 + this.tension * (0.35 + 0.5 * Math.max(lub, dub)));
+      c.fillStyle = this.dread; c.fillRect(0, 0, W, H); c.globalAlpha = 1;
+    }
     if (this.dmgFlash > 0) {
       if (!this.vignette) {
         this.vignette = c.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
@@ -359,45 +384,8 @@ export class Renderer {
   }
 
   drawRoad(world) {
-    const c = this.c;
     const dist = world ? world.distance : this.time * C.track.scrollSpeed;
-    c.fillStyle = P.grass; c.fillRect(-20, -20, W + 40, H + 40);
-    c.fillStyle = P.grassAlt;
-    let off = dist % 160;
-    for (let y = off - 160; y < H + 20; y += 160) c.fillRect(-20, y, W + 40, 80);
-    const tile = 150, first = Math.floor((dist + CY - H - 80) / tile), last = Math.ceil((dist + CY + 120) / tile);
-    for (let i = first; i <= last; i++) {
-      const y = CY - (i * tile - dist);
-      for (let side = 0; side < 2; side++) {
-        const h = hash(i * 2 + side);
-        if (h < 0.35) continue;
-        const x = side ? RR + 22 + hash(i * 7 + side) * 20 : RL - 22 - hash(i * 7 + side) * 20;
-        if (h < 0.8) this.bush(x, y, 10 + hash(i * 3 + side) * 6);
-        else this.rock(x, y);
-      }
-    }
-    c.fillStyle = P.roadEdge; c.fillRect(RL - 10, -20, RW + 20, H + 40);
-    c.fillStyle = P.road; c.fillRect(RL - 4, -20, RW + 8, H + 40);
-    c.fillStyle = P.roadAlt;
-    off = dist % 140;
-    for (let y = off - 140; y < H + 20; y += 140) c.fillRect(RL - 4, y, RW + 8, 56);
-    off = dist % 56;
-    for (let y = off - 56; y < H + 20; y += 56) {
-      c.fillStyle = P.curbA; c.fillRect(RL - 16, y, 10, 28); c.fillRect(RR + 6, y, 10, 28);
-      c.fillStyle = P.curbB; c.fillRect(RL - 16, y + 28, 10, 28); c.fillRect(RR + 6, y + 28, 10, 28);
-    }
-    c.lineWidth = 2; c.strokeStyle = P.outline; c.globalAlpha = 0.35;
-    c.beginPath(); c.moveTo(RL - 16, -20); c.lineTo(RL - 16, H + 20); c.moveTo(RR + 16, -20); c.lineTo(RR + 16, H + 20); c.stroke();
-    c.globalAlpha = 1;
-    const lanes = this.currentLanes(world);
-    c.fillStyle = P.laneLine;
-    off = dist % 90;
-    c.globalAlpha = 0.85;
-    for (let l = 1; l < lanes; l++) {
-      const x = RL + (RW * l) / lanes;
-      for (let y = off - 90; y < H + 20; y += 90) c.fillRect(x - 3, y, 6, 46);
-    }
-    c.globalAlpha = 1;
+    drawScenery(this.c, world, dist, this.currentLanes(world), this.time);
   }
   currentLanes(world) {
     if (!world) return 2;
@@ -405,22 +393,6 @@ export class Renderer {
     for (const r of world.rows) if (!r.crossed && (!best || r.y > best.y)) best = r;
     if (best) return best.lanes;
     return world.endless ? lanesFor(world.levelInt) : world.def.lanes;
-  }
-  bush(x, y, r) {
-    const c = this.c;
-    c.lineWidth = 2.5; c.strokeStyle = P.outline;
-    c.fillStyle = P.bushDark;
-    c.beginPath(); c.arc(x - r * 0.7, y + 2, r * 0.8, 0, TAU); c.arc(x + r * 0.7, y + 3, r * 0.75, 0, TAU); c.fill();
-    c.beginPath(); c.arc(x - r * 0.7, y + 2, r * 0.8, 0, TAU); c.stroke();
-    c.beginPath(); c.arc(x + r * 0.7, y + 3, r * 0.75, 0, TAU); c.stroke();
-    c.fillStyle = P.bush; c.beginPath(); c.arc(x, y - 3, r, 0, TAU); c.fill(); c.stroke();
-    c.fillStyle = 'rgba(255,255,255,0.25)'; c.beginPath(); c.arc(x - r * 0.35, y - r * 0.45, r * 0.3, 0, TAU); c.fill();
-  }
-  rock(x, y) {
-    const c = this.c;
-    c.fillStyle = P.rock; c.lineWidth = 2.5; c.strokeStyle = P.outline;
-    c.beginPath(); c.ellipse(x, y, 13, 9, 0, 0, TAU); c.fill(); c.stroke();
-    c.fillStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.ellipse(x - 4, y - 3, 4, 2.5, 0, 0, TAU); c.fill();
   }
 
   /** A red stripe down the lane of every vehicle about to come in (its warning time). */
@@ -470,14 +442,13 @@ export class Renderer {
       if (rare) {
         this.text(t(RARE_CAPTION[g.kind]), cx, top, r.lanes > 2 ? 11 : 13, P.outline, null, 0);
         let icon = g.kind, lbl;
-        if (g.kind === 'weapon') {
-          const next = world.stats.weapon + 1;
-          if (next < WEAPON_IDS.length) { icon = WEAPON_IDS[next]; lbl = t(icon); }
-          else { icon = 'damage'; lbl = '×' + C.gates.rare.weaponMaxedDamage; }
+        if (g.kind === 'weapon') {                    // the weapon on offer; the one you hold → ×damage
+          icon = WEAPON_IDS[g.w];
+          lbl = g.w === world.stats.weapon ? '×' + C.gates.rare.sameWeaponDamage : t(icon);
         } else lbl = gateLabel(g);
         const big = icon === 'rate' || icon === 'damage' ? 1.25 : icon === 'airstrike' || icon === 'heli' ? 1.6 : 1.55;
         drawIcon(c, icon, cx, lbl ? cy - 16 : cy - 4, big, '#ffffff');
-        if (lbl) this.text(lbl, cx, cy + 26, lbl.length > 6 ? 21 : 26, P.gateText, P.outline, 6);
+        if (lbl) this.text(lbl, cx, cy + 26, this.fitSize(lbl, w - 14, lbl.length > 6 ? 21 : 26, 12), P.gateText, P.outline, 6);
       } else {
         if (g._lk !== (g.kind === 'add' ? g.value : g.idx)) { g._lk = g.kind === 'add' ? g.value : g.idx; g._lbl = gateLabel(g); }
         const size = g._lbl.length > 4 ? (g._lbl.length > 5 ? 32 : 38) : 46;
@@ -504,8 +475,9 @@ export class Renderer {
     const c = this.c;
     for (const a of world.allies) {
       if (!a.alive) continue;
-      const s = a.type === 'tank' ? this.S.allyTank : this.S.allyTruck;
       const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
+      if (a.type === 'crate') { this.drawCrate(a, world, pulse); continue; }
+      const s = a.type === 'tank' ? this.S.allyTank : this.S.allyTruck;
       c.fillStyle = 'rgba(34,197,94,' + (0.18 + 0.14 * pulse).toFixed(3) + ')';
       c.beginPath(); c.ellipse(a.x, a.y + 8, a.w * 0.9, a.h * 0.62, 0, 0, TAU); c.fill();
       c.drawImage(s.cv, a.x - s.w / 2, a.y - s.h / 2, s.w, s.h);
@@ -513,6 +485,19 @@ export class Renderer {
       c.beginPath(); c.moveTo(a.x - 10, ay - 6); c.lineTo(a.x, ay + 4); c.lineTo(a.x + 10, ay - 6);
       c.lineWidth = 7; c.strokeStyle = P.outline; c.stroke(); c.lineWidth = 3.5; c.strokeStyle = '#ffffff'; c.stroke();
     }
+  }
+
+  /** Weapon crate: gold glow, the crate, and the weapon it holds floating above with its name. */
+  drawCrate(a, world, pulse) {
+    const c = this.c, s = this.S.crate, id = WEAPON_IDS[a.weapon];
+    c.fillStyle = 'rgba(255,210,63,' + (0.2 + 0.18 * pulse).toFixed(3) + ')';
+    c.beginPath(); c.ellipse(a.x, a.y + 6, a.w * 0.95, a.h * 0.75, 0, 0, TAU); c.fill();
+    c.drawImage(s.cv, a.x - s.w / 2, a.y - s.h / 2, s.w, s.h);
+    const iy = a.y - a.h / 2 - 22 - pulse * 5;
+    roundRect(c, a.x - 30, iy - 16, 60, 32, 12); c.fillStyle = P.gateRare; c.fill(); c.lineWidth = 3; c.strokeStyle = P.outline; c.stroke();
+    drawIcon(c, id, a.x, iy, 1.05, '#ffffff');
+    const lbl = a.weapon === world.stats.weapon ? '×' + C.gates.rare.sameWeaponDamage : t(id);
+    this.text(lbl, a.x, iy - 28, 15, '#ffffff', P.outline, 5);
   }
 
   drawBoulderShadows(world) {
@@ -592,6 +577,12 @@ export class Renderer {
       const bob = z.state === 1 ? 0 : Math.sin(tm * 10 + z.phase) * 1.5;
       c.drawImage(s.cv, z.x - s.w / 2, z.y - s.h / 2 + bob, s.w, s.h);
       if (z.flash > 0.05) { c.globalAlpha = z.flash; c.drawImage(spr.flash.cv, z.x - s.w / 2, z.y - s.h / 2 + bob, s.w, s.h); c.globalAlpha = 1; }
+      if (z.slowT > 0) {                              // egg yolk dripping off a slowed zombie
+        const hy = z.y - z.r * 0.9 + bob;
+        c.fillStyle = P.egg; c.beginPath(); c.ellipse(z.x - 3, hy, z.r * 0.55, z.r * 0.32, 0, 0, TAU); c.fill();
+        c.fillStyle = P.yolk; c.beginPath(); c.arc(z.x - 1, hy, z.r * 0.22, 0, TAU); c.fill();
+        c.beginPath(); c.ellipse(z.x + z.r * 0.3, hy + z.r * 0.35, 2.5, 5, 0, 0, TAU); c.fill();
+      }
     }
     while (bi < bosses.length) this.drawBoss(bosses[bi++], tm);
     for (let i = 0; i < n; i++) zs[i] = null;
@@ -625,10 +616,10 @@ export class Renderer {
     const c = this.c, bs = world.bullets;
     c.lineCap = 'round';
     c.beginPath();
-    let any = false;
+    let any = false, flames = false, water = false, eggs = false;
     for (let i = 0; i < world.nB; i++) {
-      const b = bs[i];
-      if (b.w === 4 || b.w === 5) continue;
+      const b = bs[i], fx = WEAPON_FX[b.w];
+      if (fx !== 'bullet') { if (fx === 'flame') flames = true; else if (fx === 'water') water = true; else if (fx === 'egg') eggs = true; continue; }
       c.moveTo(b.x, b.y); c.lineTo(b.x - b.vx * 0.016, b.y - b.vy * 0.016); any = true;
     }
     if (any) {
@@ -636,10 +627,44 @@ export class Renderer {
       c.lineWidth = 4; c.strokeStyle = P.bullet; c.stroke();
       c.lineWidth = 1.6; c.strokeStyle = P.bulletCore; c.stroke();
     }
+    if (water) {                                       // clown squirt: a stream of fat droplets
+      c.beginPath();
+      for (let i = 0; i < world.nB; i++) {
+        const b = bs[i];
+        if (WEAPON_FX[b.w] !== 'water') continue;
+        c.moveTo(b.x, b.y); c.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03);
+      }
+      c.lineWidth = 11; c.strokeStyle = 'rgba(92,200,255,0.35)'; c.stroke();
+      c.lineWidth = 6; c.strokeStyle = P.water; c.stroke();
+      c.lineWidth = 2.2; c.strokeStyle = P.waterCore; c.stroke();
+    }
+    if (eggs) {                                        // spinning eggs with a ground shadow
+      for (let i = 0; i < world.nB; i++) {
+        const b = bs[i];
+        if (WEAPON_FX[b.w] !== 'egg') continue;
+        c.fillStyle = 'rgba(0,0,0,0.18)'; c.beginPath(); c.ellipse(b.x, b.y + 12, 6, 3, 0, 0, TAU); c.fill();
+        c.save(); c.translate(b.x, b.y - 4); c.rotate(b.age * 11);
+        c.beginPath(); c.ellipse(0, 0, 6, 8, 0, 0, TAU); c.fillStyle = P.egg; c.fill();
+        c.lineWidth = 2.2; c.strokeStyle = P.outline; c.stroke(); c.restore();
+      }
+    }
+    if (flames) {                                      // flamethrower: puffs that swell, redden and fade
+      c.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < world.nB; i++) {
+        const b = bs[i];
+        if (WEAPON_FX[b.w] !== 'flame') continue;
+        const p = b.life > 0 ? Math.min(1, b.age / b.life) : 0.5;
+        const r = 6 + p * 18;
+        c.globalAlpha = 0.7 * (1 - p * p) + 0.05;
+        c.fillStyle = p < 0.3 ? P.flameCore : p < 0.7 ? P.flame : '#ff4a1c';
+        c.beginPath(); c.arc(b.x, b.y, r, 0, TAU); c.fill();
+      }
+      c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+    }
     c.beginPath(); any = false;                        // laser beams
     for (let i = 0; i < world.nB; i++) {
       const b = bs[i];
-      if (b.w !== 5) continue;
+      if (WEAPON_FX[b.w] !== 'laser') continue;
       c.moveTo(b.x, b.y); c.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03); any = true;
     }
     if (any) {
@@ -649,7 +674,7 @@ export class Renderer {
     }
     for (let i = 0; i < world.nB; i++) {               // rockets
       const b = bs[i];
-      if (b.w !== 4) continue;
+      if (WEAPON_FX[b.w] !== 'rocket') continue;
       c.fillStyle = 'rgba(255,170,60,0.5)';
       c.beginPath(); c.arc(b.x, b.y + 14, 7 + Math.random() * 3, 0, TAU); c.fill();
       c.fillStyle = P.rocket; c.strokeStyle = P.outline; c.lineWidth = 2;
@@ -689,6 +714,13 @@ export class Renderer {
       const s = S[fr];
       const bob = Math.sin(tm * 18 + i * 1.7) * 1.3;
       c.drawImage(s.cv, world.crowdX + f.x - s.w / 2, CY + f.y - s.h / 2 + bob, s.w, s.h);
+    }
+    if (world.stats.weapon === CHICKEN) {             // the egg-laying chicken struts beside the squad
+      const ch = this.S.chicken[((tm * 6) | 0) & 1];
+      const R = crowdRadius(world.soldiers), side = world.crowdX > W / 2 ? -1 : 1;
+      const x = world.crowdX + side * (R + 22), y = CY - 6 + Math.abs(Math.sin(tm * 9)) * -5;
+      c.save(); c.translate(x, y); if (side < 0) c.scale(-1, 1);
+      c.drawImage(ch.cv, -ch.w / 2, -ch.h / 2, ch.w, ch.h); c.restore();
     }
   }
 
@@ -851,6 +883,11 @@ export class Renderer {
     c.lineWidth = 3.5; c.strokeStyle = P.outline; roundRect(c, x, y, w, h, 12); c.stroke();
     if (this._bossHpShown !== Math.ceil(hp)) { this._bossHpShown = Math.ceil(hp); this._bossHpStr = fmtNum(this._bossHpShown); }
     this.text(this._bossHpStr, W / 2, y + h / 2 + 1, 16, '#ffffff', P.outline, 4);
+    if (world.status !== 'running') { c.globalAlpha = 1; return; }
+    const m = world.bossDistance, near = this.tension;              // how far it still is — the number that keeps dropping
+    if (this._distShown !== m) { this._distShown = m; this._distStr = t('bossDistance', { n: m }); }
+    const pulse = near > 0 ? 1 + 0.08 * Math.exp(-(this.beat % 1) * 9) : 1;
+    this.text(this._distStr, W / 2, y + h + 20, 19 * pulse, near > 0.5 ? '#ff6b6b' : '#ffffff', P.outline, 5);
     c.globalAlpha = 1;
   }
 
@@ -861,7 +898,7 @@ export class Renderer {
     const u = 1 - b.life / b.max;
     const sc = u < 0.12 ? 0.6 + (u / 0.12) * 0.5 : u < 0.2 ? 1.1 - ((u - 0.12) / 0.08) * 0.1 : 1;
     c.globalAlpha = Math.min(1, b.life * 2.5);
-    c.save(); c.translate(W / 2, 380); c.scale(sc, sc);
+    c.save(); c.translate(W / 2, b.y || 380); c.scale(sc, sc);
     this.text(b.text, 0, 0, b.text.length > 14 ? 42 : 50, b.color, P.outline, 10);
     if (b.sub) this.text(b.sub, 0, 52, b.sub.length > 26 ? 22 : 28, '#ffffff', P.outline, 7);
     c.restore();

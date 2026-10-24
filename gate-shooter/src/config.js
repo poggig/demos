@@ -5,7 +5,7 @@
 // Personalizable CONTENT (texts, names, colours, dedication) lives in theme.js, not here.
 
 export const CONFIG = {
-  version: '1.2.0',
+  version: '1.3.0',
 
   // ── View & loop ────────────────────────────────────────────────────────────
   view: { w: 540, h: 960, dprCap: 2 },
@@ -38,17 +38,29 @@ export const CONFIG = {
   maxBullets: 140,            // on-screen bullet cap: beyond it shots MERGE (DPS kept)
   fireTick: 1 / 20,           // bullets are emitted in 20 small sub-volleys per second
   baseDamage: 1,              // damage of one rifle bullet before multipliers
-  // Weapon ladder — a WEAPON gate moves one step right. The weapon is KEPT for the whole run.
-  // Per-soldier DPS: 2.4 → 3.3 → 4.3 → 5.5 → 7.0 (+splash) → 9.0 (+pierce): every step ≈ +30 %.
+  // Weapons — WEAPON gates and road crates offer a RANDOM weapon of the pool (weapons whose 'from'
+  // ≤ level, weighted by 'offer'); taking one swaps your weapon (kept for the whole run until the
+  // next swap); the weapon you already hold → ×sameWeaponDamage instead.
+  // fx = how it flies and looks; value = how the simulator rates it against raw DPS (range, splash,
+  // crowd control); range = px it reaches (0 = the whole screen); knockback = px pushed per hit;
+  // slow = zombies hit are slowed to ×mult for 'time' s. Bosses can't be pushed or slowed.
+  // Raw per-soldier DPS: rifle 2.4 · smg 3.3 · water 3.1 · shotgun 4.3 · chicken 4.7 · minigun 5.5 ·
+  // flamer 12 (short range: bosses only burn up close) · rocket 7.0 · laser 9.0. Offers favour the stronger ones.
   weapons: [
-    { id: 'rifle',   interval: 0.42, damage: 1.0,  pellets: 1, speed: 950,  spread: 0.035, radius: 4,   gateHits: 1 },
-    { id: 'smg',     interval: 0.15, damage: 0.5,  pellets: 1, speed: 1050, spread: 0.08,  radius: 3.5, gateHits: 1 },
-    { id: 'shotgun', interval: 0.60, damage: 0.85, pellets: 3, speed: 880,  spread: 0.21,  radius: 4,   gateHits: 1 },
-    { id: 'minigun', interval: 0.06, damage: 0.33, pellets: 1, speed: 1150, spread: 0.06,  radius: 3.5, gateHits: 1 },
-    { id: 'rocket',  interval: 0.80, damage: 5.6,  pellets: 1, speed: 660,  spread: 0.02,  radius: 7,   gateHits: 4,
+    { id: 'rifle',   interval: 0.42, damage: 1.0,  pellets: 1, speed: 950,  spread: 0.035, radius: 4,   gateHits: 1, fx: 'bullet', from: 99, offer: 0 },
+    { id: 'smg',     interval: 0.15, damage: 0.5,  pellets: 1, speed: 1050, spread: 0.08,  radius: 3.5, gateHits: 1, fx: 'bullet', from: 1, offer: 0.45 },
+    { id: 'shotgun', interval: 0.60, damage: 0.85, pellets: 3, speed: 880,  spread: 0.21,  radius: 4,   gateHits: 1, fx: 'bullet', from: 2, offer: 0.55, value: 0.85 },
+    { id: 'minigun', interval: 0.06, damage: 0.33, pellets: 1, speed: 1150, spread: 0.06,  radius: 3.5, gateHits: 1, fx: 'bullet', from: 3, offer: 0.8 },
+    { id: 'rocket',  interval: 0.80, damage: 5.6,  pellets: 1, speed: 660,  spread: 0.02,  radius: 7,   gateHits: 4, fx: 'rocket', from: 4, offer: 1,
       splash: 72, splashFactor: 0.55 },
-    { id: 'laser',   interval: 0.40, damage: 3.6,  pellets: 1, speed: 1500, spread: 0.01,  radius: 5,   gateHits: 3,
+    { id: 'laser',   interval: 0.40, damage: 3.6,  pellets: 1, speed: 1500, spread: 0.01,  radius: 5,   gateHits: 3, fx: 'laser', from: 5, offer: 1.1,
       pierce: true },            // passes through every zombie in its line
+    { id: 'water',   interval: 0.07, damage: 0.22, pellets: 1, speed: 900,  spread: 0.05,  radius: 5,   gateHits: 1, fx: 'water', from: 1, offer: 0.6,
+      value: 1.15, knockback: 5 },                    // clown squirt gun: weak, but shoves the horde back
+    { id: 'chicken', interval: 0.55, damage: 2.6,  pellets: 1, speed: 560,  spread: 0.07,  radius: 7,   gateHits: 2, fx: 'egg', from: 2, offer: 0.7,
+      value: 1.1, splash: 46, splashFactor: 0.5, slow: { mult: 0.45, time: 2.2 } }, // eggs: yolk splash that slows
+    { id: 'flamer',  interval: 0.05, damage: 0.6,  pellets: 1, speed: 560,  spread: 0.22,   radius: 9,   gateHits: 1, fx: 'flame', from: 3, offer: 0.8,
+      value: 0.4, range: 400, pierce: true },        // flamethrower: a short, wide cone that burns everything in it
   ],
   stats: { maxRateMult: 4, maxDamageMult: 25 },
 
@@ -73,7 +85,7 @@ export const CONFIG = {
     rare: {
       rateValue: 0.25,        // "+fire rate" gate: +25 % fire rate (until the end of the level)
       damageValue: 1.5,       // "×damage" gate: damage ×1.5 (until the end of the level)
-      weaponMaxedDamage: 1.3, // weapon gate when already on the last weapon → ×1.3 damage
+      sameWeaponDamage: 1.3,  // a weapon gate / crate offering the weapon you already hold → ×1.3 damage
     },
   },
 
@@ -117,6 +129,7 @@ export const CONFIG = {
   allies: {                   // friendly pickups on the road: drive into them
     tank: { duration: 14, fireEvery: 0.8, dmgMult: 7, splash: 90, w: 58, h: 78 },
     truck: { rel: 0.6, min: 3, capMult: 2, w: 52, h: 84 },   // +crowd×0.6 soldiers (≥3, ≤2×addCap×scale)
+    crate: { w: 50, h: 46 },  // weapon crate: drive into it to swap to the weapon shown on it
   },
 
   // ── Boss ───────────────────────────────────────────────────────────────────
@@ -124,31 +137,34 @@ export const CONFIG = {
     // Boss hp is CALIBRATED by the generator: the damage the reference player really deals until
     // the boss has covered targetProgress of its walk (so fast or charging bosses are fair too),
     // floored at minHpMult × zombieHp(level). Then re-validated (sim.bossMaxProgress).
-    targetProgress: 0.8,
-    introTargetProgress: [0.3, 0.45, 0.6], // gentler bosses on levels 1, 2, 3
+    targetProgress: 0.85,
+    introTargetProgress: [0.4, 0.5, 0.6, 0.72], // gentler bosses on levels 1–4
     minHpMult: 12,
     enterSpeed: 150,          // px/s: quick entrance down to enterY (clear of the HUD) …
     enterY: 270,
     specialFromY: 80,         // specials start once the boss is this far down (in view, below the HUD pills)
-    speed: 26,                // … then a slow walk toward the crowd
+    speed: 16,                // … then a SLOW, relentless walk toward the crowd (~30 s to reach you)
     r: 66,
     home: 70,
     coins: 25,
     score: 500,
-    stompEvery: 1.15,         // s between stomps (light screen shake)
+    stompEvery: 1.15,         // s between stomps (screen shake grows as it gets closer)
+    escort: { every: 7, count: 3, types: { walker: 3, runner: 1 } }, // its horde keeps coming (king/necro summon instead)
+    minionRamp: 1,            // summoned / escort zombies are as tough as the road at this share of the level (1 = its end)
+    heartbeat: { from: 0.3, bpm: [70, 165] },  // tension: heartbeat + red pulse from 30 % of its walk, faster as it nears
     firstSpecial: 0.5,        // first special ≤ this many s after specialFromY (min(firstSpecial, every × 0.25)), then every 'every'
     // one archetype per level, in this order (then the cycle repeats as a faster "elite")
     order: ['king', 'butcher', 'acid', 'tank', 'blob', 'necro', 'giant', 'hound'],
     eliteCooldown: 0.85,      // special-move cooldowns ×0.85 per completed cycle
     king:    { every: 3.4, summon: 3, type: 'walker' },                 // summons the horde
-    butcher: { every: 4.2, telegraph: 0.8, dist: 130, time: 0.35 },     // telegraphed charge
+    butcher: { every: 4.2, telegraph: 0.8, dist: 60, time: 0.3 },       // telegraphed lunge (short: it still comes slowly)
     acid:    { every: 2.5, globs: 3, gap: 0.28, speed: 300, killFrac: 0.06, killMin: 2 }, // aimed acid stream: globs 'gap' s apart,
                                                                         // each kills 6 % of the crowd (≥ 2)
     tank:    { every: 5, shield: 2, reduce: 0.1 },                      // armour-up phases
     blob:    { splitAt: 0.5, splitOffset: 55 },                                          // splits in two at 50 %
     necro:   { every: 3.8, summon: 4, type: 'mini' },                   // raises the dead
     giant:   { every: 3.2, telegraph: 1.1, radius: 78, killFrac: 0.22, killMin: 3 }, // boulders
-    hound:   { zigAmp: 150, zigFreq: 0.8, speedMult: 1.45 },            // zigzag rush
+    hound:   { zigAmp: 150, zigFreq: 0.8, speedMult: 1.1 },             // zigzag stalk
   },
 
   // ── Difficulty curves (campaign: level; endless: equivalent level) ─────────
@@ -187,7 +203,7 @@ export const CONFIG = {
 
   // ── Level generator ────────────────────────────────────────────────────────
   gen: {
-    levelLength: 6250,        // px of road before the boss (~42 s) → ~50–60 s with the boss
+    levelLength: 5700,        // px of road before the boss (~38 s) → ~50–70 s with the slow boss
     firstBlockAt: 380,        // the opening gate row is on screen from the start …
     hostileEnterMargin: 60,   // … but every zombie / vehicle enters from the top (≥ this beyond the spawn line)
     blockGap: [520, 680],     // distance between blocks
@@ -201,11 +217,12 @@ export const CONFIG = {
     gentleUntil: 0.3,         // the first 30 % of a level (the crowd was just cut to 25 %) …
     gentleMix: { walker: 8, runner: 2 }, // … only sends basic zombies, and its red gates are
     gentleBad: [0, 0.5],      // … ×0 on level 1 and ×0.5 later (never ÷): a crowd of 1–3 must not be wiped
-    tutorialWaveHp: 1.0,      // level 1's FIRST wave: zombie hp capped here (1 = one rifle bullet)
+    tutorialWaveHp: 1.0,      // level 1's gentle part (≥ its first wave): zombie hp capped here (1 = one rifle bullet)
     vehicleFrom: 2,           // enemy vehicles from level 2 …
     vehicleChance: 0.3,       // … in this share of wave / mixed blocks
     carFrom: 4,               // cars (fast, swerving) from level 4; buses before
     allyChance: 0.3,          // an allied pickup (tank / truck) follows this share of gate rows
+    crateChance: 0.35,        // a weapon crate (random weapon) pops up after this share of waves
     maxAttempts: 12,          // regenerate with a new sub-seed up to this many times …
     easeStep: 0.88,           // … then ease the level (hp & counts ×0.88 per try)
     maxEaseTries: 20,
@@ -220,15 +237,16 @@ export const CONFIG = {
   // a careful player usually wins, a sloppy one meets the boss with too little and is crushed.
   sim: {
     maxSeconds: 150,          // safety stop
-    bossMaxProgress: 0.9,     // the reference player must kill the boss before it covers 90 % of its walk
+    bossMaxProgress: 0.93,    // the reference player must kill the boss before it covers 93 % of its walk
     bonusValue: 0.45,         // air strike / helicopter gate valued as +45 % firepower
     weaponValue: 0.6,         // a weapon gate is worth +60 % on top of its DPS gain (it is KEPT for the run)
     repairGates: true,        // the reference crowd's bullets improve the gate in front of it (as in the game)
   },
   ref: {
-    start: [1, 4, 8, 12, 16, 20, 24, 26, 32, 35], // reference starting crowd on levels 1..10 …
+    start: [1, 4, 8, 9, 12, 15, 18, 21, 26, 29], // reference starting crowd on levels 1..10 …
     startGrowth: 1.12,        // … then ×1.12 per level (≈ 60–80 % of the median careful chained run)
-    weaponPerLevel: 0.9,      // reference weapon = floor((L−1) × 0.9), capped at the last weapon
+    weapons: ['rifle', 'smg', 'shotgun', 'minigun', 'rocket', 'laser'], // the reference player's weapons …
+    weaponPerLevel: 0.55,     // … it holds weapons[floor((L−1) × 0.55)]: weapons come at random now, so slower
     shopPerLevel: 0.5,        // reference shop: floor((L−1) × 0.5) levels of damage AND of fire rate
   },
 
@@ -237,6 +255,7 @@ export const CONFIG = {
   levelClearBonus: 100,       // × level
   endless: {
     distancePerLevel: 2200,   // equivalent level +1 every N px (~12–15 s)
+    sceneEvery: 4400,         // the road reaches a new place (THEME.scenery) every N px
     hpGrowth: 1.13,           // endless zombies grow exponentially …
     rampDistance: 9000,       // waves grow from waveRamp[0] to full size over this distance
     gateLinear: 0.12,         // … while gate caps only grow linearly: ×(1 + 0.12 × (eqLevel−1))

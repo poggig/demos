@@ -4,6 +4,7 @@ import { CONFIG } from './config.js';
 import { Rng } from './rng.js';
 
 const A = CONFIG.audio;
+const WEAPON_IDS = CONFIG.weapons.map(w => w.id);
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 
 // ── procedural tracks ────────────────────────────────────────────────────────
@@ -125,15 +126,25 @@ export class AudioEngine {
   can() { return this.ctx && this.sfxOn && this.ctx.state === 'running'; }
 
   // ── SFX ────────────────────────────────────────────────────────────────────
-  // weapons: 0 rifle · 1 smg · 2 shotgun · 3 minigun · 4 rockets · 5 laser
+  // weapon: index into CONFIG.weapons (sounds keyed by id)
   shot(weapon) {
-    if (!this.can() || !this.limit('shot', A.shotMinInterval * (weapon === 4 ? 3 : weapon === 5 ? 2 : 1))) return;
-    if (weapon === 4) { this.noise(0.22, 0.28, 'lowpass', 900); this.tone(180, 0.2, 'sawtooth', 0.08, 60); return; }
-    if (weapon === 5) { this.tone(1800, 0.12, 'sawtooth', 0.05, 500); this.tone(2400, 0.08, 'square', 0.03, 900); return; }
-    if (weapon === 2) { this.noise(0.12, 0.25, 'lowpass', 2400); return; }
-    if (weapon === 3) { this.noise(0.04, 0.12, 'highpass', 2600); this.tone(500, 0.03, 'square', 0.025, 260); return; }
-    this.noise(0.05, weapon === 1 ? 0.12 : 0.16, 'highpass', 1800);
-    this.tone(weapon === 1 ? 900 : 700, 0.04, 'square', 0.03, 300);
+    const id = WEAPON_IDS[weapon] || 'rifle';
+    const slow = { rocket: 3, laser: 2, chicken: 6, flamer: 1.6, water: 1.3 }[id] || 1;
+    if (!this.can() || !this.limit('shot', A.shotMinInterval * slow)) return;
+    if (id === 'rocket') { this.noise(0.22, 0.28, 'lowpass', 900); this.tone(180, 0.2, 'sawtooth', 0.08, 60); return; }
+    if (id === 'laser') { this.tone(1800, 0.12, 'sawtooth', 0.05, 500); this.tone(2400, 0.08, 'square', 0.03, 900); return; }
+    if (id === 'shotgun') { this.noise(0.12, 0.25, 'lowpass', 2400); return; }
+    if (id === 'minigun') { this.noise(0.04, 0.12, 'highpass', 2600); this.tone(500, 0.03, 'square', 0.025, 260); return; }
+    if (id === 'flamer') { this.noise(0.16, 0.14, 'lowpass', 700); this.noise(0.1, 0.05, 'bandpass', 2200); return; }   // roar
+    if (id === 'water') { this.noise(0.09, 0.11, 'bandpass', 3200, undefined, undefined, 3); return; }                   // pssht
+    if (id === 'chicken') {                                                                                            // "bok!" + pop
+      const t = this.ctx.currentTime;
+      const p = 0.9 + Math.random() * 0.25;
+      this.tone(620 * p, 0.07, 'square', 0.05, 380 * p, t); this.tone(520 * p, 0.09, 'square', 0.045, 300 * p, t + 0.07);
+      return;
+    }
+    this.noise(0.05, id === 'smg' ? 0.12 : 0.16, 'highpass', 1800);
+    this.tone(id === 'smg' ? 900 : 700, 0.04, 'square', 0.03, 300);
   }
   explosion(big) {
     if (!this.can() || !this.limit('boomx', big ? 0.12 : 0.07)) return;
@@ -220,10 +231,25 @@ export class AudioEngine {
     this.tone(midiHz(88), 0.06, 'square', 0.05, null, t);
     this.tone(midiHz(93), 0.1, 'square', 0.05, null, t + 0.05);
   }
-  weapon() {
+  weapon(weapon) {
     if (!this.can()) return;
-    const t = this.ctx.currentTime;
+    const t = this.ctx.currentTime, id = WEAPON_IDS[weapon];
     [67, 71, 74, 79, 83].forEach((m, i) => this.tone(midiHz(m), 0.1, 'triangle', 0.12, null, t + i * 0.04));
+    if (id === 'chicken') [0, 0.12, 0.22].forEach((d, i) => this.tone(700 - i * 60, 0.09, 'square', 0.07, 420, t + 0.25 + d)); // buk-buk-BAWK
+    else if (id === 'water') { this.tone(330, 0.14, 'square', 0.09, 300, t + 0.25); this.tone(262, 0.2, 'square', 0.09, 240, t + 0.4); } // clown honk-honk
+    else if (id === 'flamer') this.noise(0.5, 0.18, 'lowpass', 600, t + 0.2);                                                           // whoomph
+  }
+/** Call every frame with the boss tension (0..1): a lub-dub that speeds up as the boss closes in. */
+  heartbeat(dt, tension) {
+    if (tension <= 0) { this.hbAcc = 0.8; return; }
+    const [b0, b1] = CONFIG.boss.heartbeat.bpm;
+    this.hbAcc = (this.hbAcc ?? 0.8) + dt * (b0 + (b1 - b0) * tension) / 60;
+    if (this.hbAcc < 1) return;
+    this.hbAcc -= 1;
+    if (!this.can()) return;
+    const t = this.ctx.currentTime, v = 0.25 + 0.35 * tension;
+    this.tone(62, 0.13, 'sine', v, 40, t);
+    this.tone(55, 0.13, 'sine', v * 0.75, 38, t + 0.17);
   }
   bossRoar() {
     if (!this.can()) return;

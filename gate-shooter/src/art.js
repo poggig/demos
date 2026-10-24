@@ -393,6 +393,34 @@ function drawCoin(c) {
   dot(c, -2.5, -2.5, 1.8, 'rgba(255,255,255,0.7)');
 }
 
+/** Side-view chicken facing right (the egg launcher). flap 0/1 = wing down/up. */
+function drawChicken(c, flap, s = 1) {
+  c.save(); c.scale(s, s);
+  c.lineWidth = 2.6; c.strokeStyle = OUT;
+  c.strokeStyle = P.chickenBeak; c.lineWidth = 3;                                     // legs
+  c.beginPath(); c.moveTo(-3, 12); c.lineTo(-4, 21); c.moveTo(4, 12); c.lineTo(5, 21); c.stroke();
+  c.strokeStyle = OUT; c.lineWidth = 2.6;
+  polyShape(c, [-22, -6, -14, -12, -12, 2], P.chickenTail);                           // tail
+  ellipse(c, -2, 4, 16, 12, P.chickenBody);                                           // body
+  circle(c, 12, -10, 8.5, P.chickenBody);                                             // head
+  polyShape(c, [9, -18, 11, -23, 13, -18.5, 15.5, -22.5, 16.5, -17], P.chickenComb);   // comb
+  polyShape(c, [19, -12, 27, -9, 19, -6], P.chickenBeak);                              // beak
+  c.beginPath(); c.ellipse(19, -3, 2.4, 3.6, 0, 0, TAU); shape(c, P.chickenComb, 2);   // wattle
+  dot(c, 14, -12, 2.3, OUT); dot(c, 14.7, -12.8, 0.8, '#ffffff');                     // eye
+  c.save(); c.translate(-3, 2); c.rotate(flap ? -0.75 : 0.15);                        // wing
+  c.beginPath(); c.ellipse(-4, 0, 10, 6.5, 0, 0, TAU); shape(c, P.chickenWing); c.restore();
+  c.restore();
+}
+/** Wooden weapon crate (the weapon icon floats above it at draw time). */
+function drawCrate(c) {
+  rr(c, -23, -21, 46, 42, 6); shape(c, P.crate, 3);
+  c.strokeStyle = P.crateDark; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(-17, -15); c.lineTo(17, 15); c.moveTo(17, -15); c.lineTo(-17, 15); c.stroke();
+  rr(c, -23, -21, 46, 42, 6); c.lineWidth = 3; c.strokeStyle = OUT; c.stroke();
+  rr(c, -9, -6, 18, 12, 3); shape(c, P.gateRare, 2.5);
+  c.fillStyle = OUT; c.font = '900 11px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('?', 0, 0.5);
+}
+
 // ── icons (gates + HUD) — drawn directly with paths ─────────────────────────
 /** Side-view gun silhouettes (pointing right), ~36 units wide. */
 function drawGun(c, k) {
@@ -429,6 +457,23 @@ function drawGun(c, k) {
     c.fillStyle = light; rr(c, -9, -3.5, 12, 3, 1.5); c.fill();
     c.fillStyle = P.laser; for (const x of [-11, -6, -1]) { rr(c, x, 1, 3, 2.5, 1); c.fill(); }
     c.fillStyle = body; poly(c, [-6, 5, -1, 5, -3, 12, -8, 12]);       // grip
+  } else if (k === 'water') {                                          // clown squirt gun
+    c.fillStyle = P.clownA; rr(c, -15, -5, 23, 10, 5); c.fill(); c.stroke();          // candy body
+    c.fillStyle = P.clownB; rr(c, 7, -3, 11, 5, 2.5); c.fill(); c.stroke();           // nozzle
+    c.fillStyle = P.water; c.beginPath(); c.arc(-5, -10, 6.5, 0, TAU); c.fill(); c.stroke(); // water tank
+    c.fillStyle = 'rgba(255,255,255,0.75)'; c.beginPath(); c.arc(-7, -12, 2.2, 0, TAU); c.fill();
+    c.fillStyle = P.clownC; poly(c, [-11, 4, -5, 4, -7, 13, -13, 13]);                // grip
+    c.fillStyle = P.clownB; for (const [x, y] of [[-11, -1], [-4, 1.5], [2, -1.5]]) { c.beginPath(); c.arc(x, y, 1.7, 0, TAU); c.fill(); }
+    c.fillStyle = P.water; for (const [x, y, r] of [[21, -2, 2], [25, -4, 1.4], [25, 0.5, 1.2]]) { c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
+  } else if (k === 'chicken') {                                        // a chicken (it shoots eggs)
+    drawChicken(c, 0, 0.62);
+  } else if (k === 'flamer') {                                         // flamethrower
+    c.fillStyle = P.flameTank; rr(c, -17, -9, 9, 17, 4); c.fill(); c.stroke();         // fuel tank
+    c.fillStyle = body; rr(c, -9, -4, 18, 8, 2.5); c.fill(); c.stroke();               // body
+    rr(c, 8, -2.5, 8, 5, 1.5); c.fill(); c.stroke();                                   // nozzle
+    poly(c, [-5, 3, -1, 3, -3, 11, -7, 11]);                                           // grip
+    c.fillStyle = P.flame; c.beginPath(); c.moveTo(16, -4); c.quadraticCurveTo(26, -6, 24, 0); c.quadraticCurveTo(26, 6, 16, 4); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = P.flameCore; c.beginPath(); c.ellipse(19, 0, 3, 2, 0, 0, TAU); c.fill();
   } else { // rifle
     poly(c, [-18, -2, -8, -4, -8, 3, -18, 6]);                         // stock
     rr(c, -9, -5, 16, 8, 2); c.fill(); c.stroke();                     // receiver
@@ -439,7 +484,7 @@ function drawGun(c, k) {
     c.fillStyle = light; rr(c, -6, -3, 11, 2.2, 1); c.fill();
   }
 }
-export const WEAPON_ICON_KINDS = ['rifle', 'smg', 'shotgun', 'minigun', 'rocket', 'laser'];
+export const WEAPON_ICON_KINDS = ['rifle', 'smg', 'shotgun', 'minigun', 'rocket', 'laser', 'water', 'chicken', 'flamer'];
 export function drawIcon(c, kind, x, y, s, color = '#ffffff') {
   c.save(); c.translate(x, y); c.scale(s, s);
   c.lineJoin = 'round'; c.lineCap = 'round';
@@ -513,5 +558,7 @@ export function bakeSprites(k) {
   S.heli = bake(56, 124, k, drawHeli);
   S.jet = bake(76, 76, k, drawJet);
   S.coin = bake(20, 20, k, drawCoin);
+  S.chicken = [bake(64, 56, k, c => drawChicken(c, 0)), bake(64, 56, k, c => drawChicken(c, 1))];
+  S.crate = bake(54, 50, k, drawCrate);
   return S;
 }

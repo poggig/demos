@@ -19,10 +19,12 @@ export function ladderIndex(factor) {
   if (i < 0) throw new Error('factor not on the ladder: ' + factor);
   return i;
 }
-export function makeRareGate(kind) {
+/** w: weapon index offered by a WEAPON gate. */
+export function makeRareGate(kind, w = 1) {
   const r = CONFIG.gates.rare;
   if (kind === 'rate') return { kind, value: r.rateValue, progress: 0 };
   if (kind === 'damage') return { kind, value: r.damageValue, progress: 0 };
+  if (kind === 'weapon') return { kind, w: Math.max(0, Math.min(CONFIG.weapons.length - 1, w | 0)), value: 1, progress: 0 };
   if (RARE_KINDS.includes(kind)) return { kind, value: 1, progress: 0 };
   throw new Error('unknown special gate ' + kind);
 }
@@ -54,7 +56,7 @@ export function resolveGateSpec(spec, crowd, scale) {
     }
     return makeMultGate(spec.idx);
   }
-  return makeRareGate(spec.kind);
+  return makeRareGate(spec.kind, spec.w);
 }
 
 export const isSoldierGate = g => g.kind === 'add' || g.kind === 'mult';
@@ -122,6 +124,16 @@ export function weaponDps(weaponIndex) {
   const w = CONFIG.weapons[weaponIndex];
   return (CONFIG.baseDamage * w.damage * w.pellets) / w.interval;
 }
+/** The simulator's rating of a weapon: raw DPS × its 'value' (range, splash, crowd control). */
+export function weaponRating(weaponIndex) {
+  return weaponDps(weaponIndex) * (CONFIG.weapons[weaponIndex].value ?? 1);
+}
+
+/** Swap to weapon w (kept for the run); the weapon already held → ×sameWeaponDamage instead. */
+export function giveWeapon(stats, w) {
+  if (w === stats.weapon) stats.damageMult = Math.min(CONFIG.stats.maxDamageMult, stats.damageMult * CONFIG.gates.rare.sameWeaponDamage);
+  else stats.weapon = w;
+}
 
 /**
  * Apply a gate to the player stats { soldiers, rateMult, damageMult, weapon } (mutates).
@@ -137,15 +149,14 @@ export function applyGate(stats, g) {
   } else if (g.kind === 'damage') {
     stats.damageMult = Math.min(CONFIG.stats.maxDamageMult, stats.damageMult * g.value);
   } else if (g.kind === 'weapon') {
-    if (stats.weapon < CONFIG.weapons.length - 1) stats.weapon++;
-    else stats.damageMult = Math.min(CONFIG.stats.maxDamageMult, stats.damageMult * CONFIG.gates.rare.weaponMaxedDamage);
+    giveWeapon(stats, g.w);
   }
   return { before, after: stats.soldiers };
 }
 
-/** Total firepower (DPS) of a stats block — what the "reasonable path" maximizes. */
+/** Total firepower of a stats block (weapon RATED, see weaponRating) — what the "reasonable path" maximizes. */
 export function statsPower(s) {
-  return s.soldiers * weaponDps(s.weapon) * s.rateMult * s.damageMult;
+  return s.soldiers * weaponRating(s.weapon) * s.rateMult * s.damageMult;
 }
 
 /** Value of crossing gate g, in firepower (stats untouched). Bonus gates count as +bonusValue. */
@@ -153,5 +164,7 @@ export function powerAfter(stats, g) {
   if (isBonusGate(g)) return statsPower(stats) * (1 + CONFIG.sim.bonusValue);
   const s = { soldiers: stats.soldiers, rateMult: stats.rateMult, damageMult: stats.damageMult, weapon: stats.weapon };
   applyGate(s, g);
-  return statsPower(s) * (g.kind === 'weapon' ? 1 + CONFIG.sim.weaponValue : 1);
+  // a better weapon is worth extra: it is KEPT for the rest of the run
+  const upgrade = g.kind === 'weapon' && weaponRating(s.weapon) > weaponRating(stats.weapon);
+  return statsPower(s) * (upgrade ? 1 + CONFIG.sim.weaponValue : 1);
 }
