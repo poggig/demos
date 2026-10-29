@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_ogre_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 60,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 60,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 60,
+        "h": 66
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_ogre.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 60,
+      "h": 66
+    },
+    "scale": "1"
+  }
+}

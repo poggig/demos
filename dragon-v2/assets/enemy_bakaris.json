@@ -1,0 +1,54 @@
+{
+  "frames": {
+    "enemy_bakaris_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    },
+    "enemy_bakaris_attack_0": {
+      "frame": {
+        "x": 46,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 62
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_bakaris.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 92,
+      "h": 62
+    },
+    "scale": "1"
+  }
+}

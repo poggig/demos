@@ -1,0 +1,194 @@
+{
+  "frames": {
+    "enemy_goblin_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_0": {
+      "frame": {
+        "x": 44,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_1": {
+      "frame": {
+        "x": 88,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_2": {
+      "frame": {
+        "x": 132,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_3": {
+      "frame": {
+        "x": 176,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_4": {
+      "frame": {
+        "x": 220,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_5": {
+      "frame": {
+        "x": 264,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_6": {
+      "frame": {
+        "x": 308,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    },
+    "enemy_goblin_walk_7": {
+      "frame": {
+        "x": 352,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 44,
+        "h": 60
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_goblin.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 396,
+      "h": 60
+    },
+    "scale": "1"
+  }
+}

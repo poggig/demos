@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_gauntlet_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 46,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 46,
+        "h": 50
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_gauntlet.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 46,
+      "h": 50
+    },
+    "scale": "1"
+  }
+}

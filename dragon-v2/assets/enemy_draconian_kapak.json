@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_draconian_kapak_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 48,
+        "h": 62
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_draconian_kapak.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 48,
+      "h": 62
+    },
+    "scale": "1"
+  }
+}

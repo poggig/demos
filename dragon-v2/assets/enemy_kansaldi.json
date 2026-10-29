@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_kansaldi_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 84
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_kansaldi.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 120,
+      "h": 84
+    },
+    "scale": "1"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_boilerdrak_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 56,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 56,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 56,
+        "h": 60
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_boilerdrak.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 56,
+      "h": 60
+    },
+    "scale": "1"
+  }
+}

@@ -10,6 +10,7 @@ zero build. Each folder is self-contained: open its `index.html` over any static
 | 🪐 **Starfall** | **https://poggig.github.io/demos/starfall/** | A private, turn-based remake of the classic browser space-strategy game: same economy, research, fleet and combat maths, but every player gets the same Action Points per turn, so strategy decides who wins rather than hours spent online. Hotseat or online with friends (free Supabase). Italian + English. |
 | 🧟 **Gate Shooter** | **https://poggig.github.io/demos/gate-shooter/** | A portrait crowd-runner for phones: start with one soldier, grow your squad through +/−/×/÷ gates, grab 9 weapons that pop up at random (including a flamethrower, an egg-laying chicken and a clown squirt gun), call air strikes and helicopters, dodge buses and acid, and survive 8 slow, relentless bosses across 8 places — countryside, desert, snowy pass, neon city, autumn woods, graveyard, seaside and volcano. Infinite procedural campaign (every level proven winnable by a simulator), Endless mode, shop, Italian + English. Fully procedural art and synthesized audio. |
 | ⚔️ **Chronicles of Azurerune** | **https://poggig.github.io/demos/dragon/** | A 5-level / 26-act action platformer. Five heroes with personalized skills + ultimates, live party swap, stealth, an underwater air-gauge, a fishing minigame, a masquerade, and a boss-rush finale against a dragon. |
+| ⚔️ **Chronicles of Azurerune v2** | **https://poggig.github.io/demos/dragon-v2/** | The same game remade from scratch by Claude (Opus 5.5) from the original source, act by act: every act, number and line as the original (the earlier port had drifted), the original's bugs fixed, playable on phones with a touch pad, Italian + English + Spanish, world art drawn in code by Claude, and a title-screen switch to compare the Retro Diffusion heroes with heroes drawn by Claude. |
 | 🌸 **Flor de Sal** | **https://poggig.github.io/demos/** | A short, warm personalized gift game (a florist's retirement) — playable in Portuguese + English. |
 
 ## 🕹️ Controls (Gate Shooter)
@@ -17,10 +18,11 @@ zero build. Each folder is self-contained: open its `index.html` over any static
 - **Phone:** drag anywhere — the squad follows your finger's movement · **Desktop:** the squad follows the mouse, or **← / →** / **A / D**
 - **P / Esc** or the ‖ button: pause · `?seed=123` replays the same run
 
-## 🕹️ Controls (Azurerune)
+## 🕹️ Controls (Azurerune v1 + v2)
 
 - **← / →** move · **↑ / W / Space** jump (double-jump!) · **Z / J** attack
 - **Q / L** skill · **X** ultimate · **K** dash · **Tab / 1–5** swap hero · **R** revive · **Esc** pause · **M** music
+- **v2 on a phone (landscape):** on-screen pad — ◀ ▶ move · ▲ jump · ⚔ attack · » dash · ★ skill · ✸ ultimate · ⇄ swap · Ⅱ pause; tap to advance dialogue; tap a fallen hero's portrait to revive
 
 ## 🛠️ Tech
 

@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "enemy_draconian_sivak_idle_0": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 72
+      }
+    }
+  },
+  "meta": {
+    "app": "game-studio-auto/rd-sheet-atlas",
+    "image": "enemy_draconian_sivak.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 64,
+      "h": 72
+    },
+    "scale": "1"
+  }
+}
