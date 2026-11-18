@@ -46,6 +46,12 @@ async function client() {
 
 const must = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
 
+// Feedback rows are insert-only for players (no read policy), so no row is returned.
+export async function sendFeedback(row) {
+  const sb = await client();
+  must(await sb.from('feedback').insert(row));
+}
+
 export async function myGames() {
   const sb = await client();
   const { data: u } = await sb.auth.getUser();

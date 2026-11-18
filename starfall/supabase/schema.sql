@@ -168,3 +168,18 @@ end $$;
 
 grant execute on function public.create_game, public.join_game, public.start_game, public.turn_status,
   public.locked_orders, public.commit_turn, public.is_member, public.turn_locked to authenticated;
+
+-- Player feedback. Players can send (insert) but not read; the owner reads it in the dashboard (Table Editor → feedback).
+create table if not exists public.feedback (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  user_id uuid default auth.uid(),
+  player_name text check (char_length(player_name) <= 40),
+  kind text not null default 'other' check (kind in ('bug', 'idea', 'balance', 'praise', 'other')),
+  message text not null check (char_length(message) between 1 and 4000),
+  game_id uuid,
+  context jsonb not null default '{}'::jsonb check (pg_column_size(context) < 8000)
+);
+alter table public.feedback enable row level security;
+drop policy if exists feedback_insert on public.feedback;
+create policy feedback_insert on public.feedback for insert to authenticated with check (user_id = auth.uid());
