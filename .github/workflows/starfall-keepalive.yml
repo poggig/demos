@@ -1,0 +1,37 @@
+# Keeps Starfall's free Supabase project from being paused for inactivity
+# (free projects pause after about a week without database activity).
+# Every 3 days it makes one small read through the public REST API, using the
+# URL and publishable key already committed in starfall/config.js.
+# If the database does not answer, the job fails and GitHub emails the repo owner.
+name: Starfall keep-alive
+
+on:
+  schedule:
+    - cron: '17 6 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: starfall/config.js
+          sparse-checkout-cone-mode: false
+      - name: Ping the database
+        run: |
+          url=$(sed -n "s/.*SUPABASE_URL = '\([^']*\)'.*/\1/p" starfall/config.js)
+          key=$(sed -n "s/.*SUPABASE_ANON_KEY = '\([^']*\)'.*/\1/p" starfall/config.js)
+          if [ -z "$url" ] || [ -z "$key" ]; then echo "No Supabase config in starfall/config.js; nothing to keep alive."; exit 0; fi
+          for attempt in 1 2 3; do
+            code=$(curl -sS -m 30 -o /dev/null -w '%{http_code}' "$url/rest/v1/games?select=id&limit=1" -H "apikey: $key" || true)
+            echo "Attempt $attempt: HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "::error::Starfall's Supabase project did not answer (last HTTP $code). It may be paused: restore it in the Supabase dashboard."
+          exit 1
