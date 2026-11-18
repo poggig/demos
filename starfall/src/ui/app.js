@@ -7,6 +7,7 @@ import { t, errText, getLang, setLang } from '../i18n.js';
 import { LocalGame } from '../net/local.js';
 import { onlineConfig, saveOnlineConfig, myGames, createOnline, joinOnline, OnlineGame } from '../net/online.js';
 import * as V from './views.js';
+import { initFeedback, refreshFeedback } from './feedback.js';
 
 const { esc, fmt, short } = V;
 const $app = document.getElementById('app');
@@ -77,10 +78,23 @@ function addOrder(o) {
 // ------------------------------------------------------------------ render
 
 function render() {
+  refreshFeedback();
   if (ctx.screen === 'menu') return renderMenu();
   if (ctx.screen === 'lobby') return renderLobby();
   if (ctx.screen === 'pass') return renderPass();
   renderGame();
+}
+
+// What the feedback form attaches to a message, so a report says where it came from.
+function feedbackContext() {
+  const a = ctx.adapter;
+  const st = a && a.state;
+  return {
+    screen: ctx.screen, view: ctx.screen === 'game' ? ctx.view : null, mode: a ? a.mode : null,
+    turn: st ? st.turn : null, playerId: a && st ? a.me : null,
+    playerName: a && st && st.players[a.me] ? st.players[a.me].name : ctx.menu.myName,
+    onlineGameId: a && a.mode === 'online' ? a.id : null, localGameId: a && a.mode === 'local' ? a.id : null,
+  };
 }
 
 function langToggle() {
@@ -466,6 +480,7 @@ $app.addEventListener('input', (e) => {
 // ------------------------------------------------------------------ boot
 
 document.documentElement.lang = getLang();
+initFeedback(feedbackContext);
 (async () => {
   const gid = params.get('game');
   if (gid && onlineConfig().ok) {
